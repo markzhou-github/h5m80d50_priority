@@ -1,0 +1,94 @@
+{
+  "package_name": "h5m80d50_priority",
+  "target_name": "target_h5m80d50",
+  "description": "Priority production candidate for h5m80d50. P1A is current 4-signal consensus, P1B is low-turnover top1 exception, P2 is current broader signal layer, and P3 is lower-confidence global+China expansion.",
+  "seed_models": [
+    {"name": "seed20260710", "dir": "models/seed20260710"},
+    {"name": "seed20260711", "dir": "models/seed20260711"},
+    {"name": "seed20260712", "dir": "models/seed20260712"},
+    {"name": "seed20260713", "dir": "models/seed20260713"},
+    {"name": "seed20260714", "dir": "models/seed20260714"}
+  ],
+  "model_source_hint": "Copy model.txt and model_meta.pkl from processed/train_v5b/h5m80d50_top3_a11_refined_seed_confirm/models/oos60_701515/drop_pressure_keep_net_l2_8_seed{seed}_l2_8_l95_m500_ff70_bf80 into models/seed{seed}/.",
+  "ranking": {
+    "vote_top_n": 3,
+    "vote_min": 4,
+    "avg_pred_top_n": 1
+  },
+  "signal_models": {
+    "avg_hi_hktech40_n22530": {
+      "base": "avg_pred_top1",
+      "conditions": [
+        ["hktech_swing", "<=", 1.76],
+        ["n225_swing", "<=", 1.106]
+      ]
+    },
+    "vote4_hi_hktech40_n22530": {
+      "base": "vote4_strict_top3",
+      "conditions": [
+        ["hktech_swing", "<=", 1.75],
+        ["n225_swing", "<=", 1.088]
+      ]
+    },
+    "vote4_hi_plus_avg_hi": {
+      "operator": "or",
+      "members": ["avg_hi_hktech40_n22530", "vote4_hi_hktech40_n22530"]
+    },
+    "vote4_hi_plus_avg_broad_hktech20": {
+      "operator": "or",
+      "members": ["vote4_hi_hktech40_n22530", "avg_broad_hktech20"]
+    },
+    "avg_broad_hktech20": {
+      "base": "avg_pred_top1",
+      "conditions": [
+        ["hktech_swing", "<=", 1.45]
+      ]
+    }
+  },
+  "priority_rules": {
+    "priority1": {
+      "name": "P1A_current_consensus",
+      "description": "Selected by all four kept signal models.",
+      "required_model_count": 4
+    },
+    "priority1b": {
+      "name": "P1B_low_turnover_exception",
+      "description": "Average-prediction top1 with turnover_prank_1500 <= 0.20042194092827004, excluding P1A.",
+      "base": "avg_pred_top1",
+      "condition": ["turnover_prank_1500", "<=", 0.20042194092827004]
+    },
+    "priority2": {
+      "name": "P2_current_broader",
+      "description": "Selected by at least one of the four kept signal models but not P1A/P1B."
+    },
+    "priority3": {
+      "name": "P3_global_china_expansion",
+      "description": "Lower-confidence incremental expansion: vote3 top3 with SPX calm, HK/Nikkei calm, or weak recent stock return versus CSI1500 EW. Excludes P1A/P1B/P2.",
+      "base": "vote3_top3",
+      "operator": "or",
+      "condition_groups": [
+        [["spx_swing", "<=", 0.576]],
+        [["hktech_swing", "<=", 2.0], ["n225_swing", "<=", 2.0]],
+        [["ret_5_rel_csi1500_ew", "<=", -0.03941249250602667]]
+      ]
+    }
+  },
+  "raw_exit_rule": {
+    "take_profit": 0.08,
+    "stop_loss": -0.05,
+    "max_hold_days": 5,
+    "buy_rule": "Buy at next trading day's open after signal date.",
+    "a_share_t1_rule": "No same-day sell on the entry day.",
+    "notes": "This target family was trained as h5m80d50: horizon 5 days, +8% first-hit target, -5% stop/downside control."
+  },
+  "validated_backtest_summary": {
+    "P1A_current_consensus_test": {"trades": 22, "precision": 0.772727, "avg_raw_return": 0.074253},
+    "P1A_current_consensus_oos": {"trades": 6, "precision": 0.833333, "avg_raw_return": 0.094855},
+    "P1B_low_turnover_incremental_test": {"trades": 12, "precision": 0.75, "avg_raw_return": 0.045690},
+    "P1B_low_turnover_incremental_oos": {"trades": 5, "precision": 1.0, "avg_raw_return": 0.084432},
+    "P1A_P1B_P2_test": {"trades": 71, "precision": 0.718310, "avg_raw_return": 0.054755},
+    "P1A_P1B_P2_oos": {"trades": 22, "precision": 0.818182, "avg_raw_return": 0.066667},
+    "P3_global_china_incremental_test": {"trades": 120, "precision": 0.466667, "avg_raw_return": 0.019103},
+    "P3_global_china_incremental_oos": {"trades": 44, "precision": 0.477273, "avg_raw_return": 0.016264}
+  }
+}
