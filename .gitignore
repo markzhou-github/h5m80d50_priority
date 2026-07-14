@@ -2,6 +2,7 @@
 
 !models/
 !models/**
+!production/
 !production/h5m80d50_priority/
 !production/h5m80d50_priority/h5m80d50_priority/
 !production/h5m80d50_priority/h2m80d50_dual/
