@@ -1,0 +1,41 @@
+{
+  "package_name": "h5m80d50_ensemble",
+  "target_spec": "h5m80d50",
+  "model_status": "production_f220_top1_validated_gate",
+  "seeds": [20260718, 20260719, 20260720, 20260721, 20260722],
+  "families": {
+    "F150": {
+      "source_name": "f150_top1_minleaf1200",
+      "top_k": 1,
+      "feature_count": 150,
+      "hyperparameters": {"num_leaves": 31, "min_data_in_leaf": 1200, "feature_fraction": 0.8, "bagging_fraction": 0.9, "lambda_l2": 3.0, "learning_rate": 0.03, "max_bin": 63}
+    },
+    "C185": {
+      "source_name": "c185_top3_l2_15",
+      "top_k": 3,
+      "feature_count": 185,
+      "hyperparameters": {"num_leaves": 31, "min_data_in_leaf": 500, "feature_fraction": 0.8, "bagging_fraction": 0.9, "lambda_l2": 15.0, "learning_rate": 0.03, "max_bin": 63}
+    },
+    "F220": {
+      "source_name": "f220_top5_minleaf800",
+      "top_k": 5,
+      "feature_count": 220,
+      "hyperparameters": {"num_leaves": 31, "min_data_in_leaf": 800, "feature_fraction": 0.8, "bagging_fraction": 0.9, "lambda_l2": 3.0, "learning_rate": 0.03, "max_bin": 63}
+    }
+  },
+  "signal_policy": {
+    "production_tag": "F220_TOP1_LATE_EARLY_GATE",
+    "family": "F220",
+    "top_k": 1,
+    "gate_source_feature": "last60_minus_first60_ret_lag1",
+    "gate_feature": "late_early_cs_pct",
+    "gate_operator": "<=",
+    "gate_threshold": 0.75791696,
+    "null_policy": "fail_gate",
+    "legacy_ensemble_policy": "included_in_signal_output_with_layer_tags",
+    "output_policy": {
+      "signals_file": "union of CONSENSUS_3, CONSENSUS_2, and FAMILY_ONLY candidates; includes production_signal flag",
+      "production_signals_file": "only F220 Top1 candidates passing the late/early gate"
+    }
+  }
+}

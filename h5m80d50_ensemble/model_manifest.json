@@ -1,0 +1,107 @@
+[
+  {
+    "family": "F150",
+    "seed": 20260718,
+    "path": "models/F150/seed20260718/model.txt",
+    "bytes": 1128570,
+    "sha256": "98c11e215c7cb1630e6abd9181017ee9bc5e1dc81c676df6ba33423fa5107dbd"
+  },
+  {
+    "family": "F150",
+    "seed": 20260719,
+    "path": "models/F150/seed20260719/model.txt",
+    "bytes": 1930814,
+    "sha256": "0337f03fcc2f38c0c433ba5d9a8aa7b4a008617199c00f069b85dd32519ff848"
+  },
+  {
+    "family": "F150",
+    "seed": 20260720,
+    "path": "models/F150/seed20260720/model.txt",
+    "bytes": 3857396,
+    "sha256": "76203d39b2d700fd09fe0611a2e4ffd58e65a23933b401c6725e95b43ab47c2b"
+  },
+  {
+    "family": "F150",
+    "seed": 20260721,
+    "path": "models/F150/seed20260721/model.txt",
+    "bytes": 4588301,
+    "sha256": "fbcf1a0ba5565cc1d39d756527f72ebe5bb5d4682dcf0a7aad30e330bc32e5fa"
+  },
+  {
+    "family": "F150",
+    "seed": 20260722,
+    "path": "models/F150/seed20260722/model.txt",
+    "bytes": 3098454,
+    "sha256": "bae2977477ad3db9426c357d70a13802fecc23df9998ac89908c34bbdcbd0e12"
+  },
+  {
+    "family": "C185",
+    "seed": 20260718,
+    "path": "models/C185/seed20260718/model.txt",
+    "bytes": 4384684,
+    "sha256": "dd38fac8b52afb2b196d172c157f6451e3f949c3ccfe65889909cba989dcbd15"
+  },
+  {
+    "family": "C185",
+    "seed": 20260719,
+    "path": "models/C185/seed20260719/model.txt",
+    "bytes": 2578596,
+    "sha256": "ff4ed79de34d76154af2dd87fdf4d9b8f40a21d92091f86b3e8d29d9993215ee"
+  },
+  {
+    "family": "C185",
+    "seed": 20260720,
+    "path": "models/C185/seed20260720/model.txt",
+    "bytes": 4766080,
+    "sha256": "0ba3a5ac2e203e5ffdde6e2cfc93db03ab9cf0df9d665b8a92054fed2040e96a"
+  },
+  {
+    "family": "C185",
+    "seed": 20260721,
+    "path": "models/C185/seed20260721/model.txt",
+    "bytes": 4571717,
+    "sha256": "3a11d6fb9504e98d23f5ad2ae212dc3eac42cf6854f624a11600b679a348175c"
+  },
+  {
+    "family": "C185",
+    "seed": 20260722,
+    "path": "models/C185/seed20260722/model.txt",
+    "bytes": 4405854,
+    "sha256": "acd80098f38803e4bf278027ba4d1d00f6f13f42daf4c9d752576935b43f1784"
+  },
+  {
+    "family": "F220",
+    "seed": 20260718,
+    "path": "models/F220/seed20260718/model.txt",
+    "bytes": 1743250,
+    "sha256": "af4f91ae48a78e4f29c65cf5085be4c9810918124f9d43501228743835e35988"
+  },
+  {
+    "family": "F220",
+    "seed": 20260719,
+    "path": "models/F220/seed20260719/model.txt",
+    "bytes": 3309598,
+    "sha256": "354d9eeea5d2a80cda12fe9d2e5047c8d2f10880336796aec68ff8a18d8ea673"
+  },
+  {
+    "family": "F220",
+    "seed": 20260720,
+    "path": "models/F220/seed20260720/model.txt",
+    "bytes": 5449348,
+    "sha256": "8bf46b2fe27fe69c97cdfc29e9e988d3b0a875886fc5efed6630394e9e6b44f8"
+  },
+  {
+    "family": "F220",
+    "seed": 20260721,
+    "path": "models/F220/seed20260721/model.txt",
+    "bytes": 3345159,
+    "sha256": "7b1b65550784ee01ba4cf506e2192a7149a84c80d9c259bb1b000baae8d0f193"
+  },
+  {
+    "family": "F220",
+    "seed": 20260722,
+    "path": "models/F220/seed20260722/model.txt",
+    "bytes": 3053128,
+    "sha256": "b41d62ad7e8f6468e402f8e670d0d0ade714e05dd66aaffcb91d1cbc64d81625"
+  }
+]

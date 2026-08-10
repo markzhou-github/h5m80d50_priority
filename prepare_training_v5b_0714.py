@@ -46,7 +46,7 @@ SW_L2_DAILY_PATH = Path(STOCK_INDEX_DIR) / "sw_l2_daily.csv"
 CSI1500_INDEX_PATH = Path(STOCK_INDEX_DIR) / "csi1500_custom_index.csv"
 MARKET_PANEL_PATH = Path(STOCK_INDEX_DIR) / "market_panel.csv"
 
-OUT_DIR = PROJECT_ROOT / "processed" / "train_v5b_0714"
+OUT_DIR = PROJECT_ROOT / "processed" / "train_v5b"
 SINGLE_DIR = OUT_DIR / "single_stock_features"
 CHUNK_DIR = OUT_DIR / "chunk_features"
 REPORT_DIR = OUT_DIR / "report"
@@ -1764,6 +1764,8 @@ def process_one_stock(
         minute = read_minute_features(ts_code, minute_feature_dir)
         if not minute.empty:
             s = s.merge(minute, on=["ts_code", "trade_date"], how="left")
+        else: 
+            print('read_minute_features(ts_code, minute_feature_dir) is empet')
 
         s["ret_1_rel_csi1500_ew"] = s["ret_1"] - s["csi1500_ew_ret"]
         s["ret_1_rel_csi1500_mcap"] = s["ret_1"] - s["csi1500_mcap_ret"]

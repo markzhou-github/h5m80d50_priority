@@ -2,6 +2,8 @@ import pandas as pd
 
 import requests
 
+from config_date import End_date
+
 users = {
     "mark": "Eqx2dpLcNQdceTffBdXNuL",
     "tim": "QtuPcWU5CBu4Fd8CEewcpW",
@@ -24,7 +26,7 @@ def send_to_server(lines: list[str]):
         # 假设 line 的格式为 "ts_code : 优先级-priority"
         # 例如: "000700.SZ : 优先级-3"
         try:
-            ts_code_part, priority_part = line.split(' : 优先级-')
+            ts_code_part, priority_part = line.split(',')
             ts_code = ts_code_part.strip()
             # 提取 ts_code 的前6位数字作为股票代码
             stock_code = ts_code[:6]
@@ -39,6 +41,21 @@ def send_to_server(lines: list[str]):
         'stocks': stocks,
         # 设置截止日期为当前时间（2026-07-12）之后的3天
         'deadline': '2026-07-10',
+    }
+
+    resp = requests.post(url, json=body, headers=headers)
+    print(resp.json())
+
+
+def msg_to_server(lines: str):
+    url = 'https://st.vstartour.com/api/mlscreen/'
+    headers = {
+        'Content-Type': 'application/json',
+        'X-API-Key': 'ambot_chat_202607',
+    }
+    
+    body = {
+        'signals': lines, 
     }
 
     resp = requests.post(url, json=body, headers=headers)
@@ -116,11 +133,24 @@ def send_csv_matches_to_bark(
     send_to_server(lines)
 
 import requests
+import argparse
 
+from config_date import End_date
 
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    "--trade_date",
+    default=End_date,
+    help=f"Trade date (default: {End_date})"
+)
+args = parser.parse_args()
 
+trade_date = args.trade_date
 
-csv_path = "signals/signals_h5m80d50_priority_20260710.csv"
+priority_path = "signals_h5priority/signals_h5m80d50_priority_" + trade_date + ".csv"
+dual_path= "signals_h2dual/signals_"+ trade_date +".csv"
+ensemble_path= "signals_h5ensemble/signals_" + trade_date + ".csv"
+
 
 match_strings = [
     "1",
@@ -130,9 +160,101 @@ match_strings = [
     "0",
 ]
 
-send_csv_matches_to_bark(
-    csv_path=csv_path,
-    match_strings=match_strings,
-    user="mark",
-    title="0710",
-)
+priority_map = {
+    "1": 1,
+    "2": 2,
+    "3": 3,
+    "4": 4,
+    "5": 5, 
+    "0": 0,    
+}
+
+dual_map = {
+    "1": 1,
+    "2": 1,
+    "3": 2,
+    "4": 3,
+    "5": 3, 
+    "0": 0, 
+}
+
+ensemble_map = {
+    "F220_TOP1_LATE_EARLY_GATE": 1, 
+    "F220_TOP1_LATE_EARLY_GATE|CONSENSUS_3": 1, 
+    "F220_TOP1_LATE_EARLY_GATE|CONSENSUS_2": 1, 
+    "F220_TOP1_LATE_EARLY_GATE|FAMILY_ONLY": 1,
+    "CONSENSUS_3": 1,
+    "CONSENSUS_2": 2,
+    "FAMILY_ONLY": 3,
+}
+
+def get_signals(sigfile: str, col1: str, col2: str, valmap: dict )-> str:
+    df = pd.read_csv(sigfile, usecols=[col1, col2])
+
+    df[col2] = df[col2].astype(str)
+#    df = df[df[col2]!= '0']
+    df[col2] = df[col2].map(valmap)
+    return df
+
+priority_signals = get_signals(priority_path, 'ts_code', 'priority', priority_map )
+dual_signals = get_signals(dual_path, 'ts_code', 'signal_priority', dual_map )
+ensemble_signals = get_signals(ensemble_path, 'ts_code', 'signal_tag', ensemble_map)
+
+priority_signals.columns = ['ts_code', 'priority']
+priority_signals[['model', 'horizon', 'gain', 'cut']] = ['priority', 5, 0.08, -0.05]
+
+ensemble_signals.columns = ['ts_code', 'priority']
+ensemble_signals[['model', 'horizon', 'gain', 'cut']] = ['ensemble', 5, 0.08, -0.05]
+
+dual_signals.columns = ['ts_code', 'priority']
+dual_signals[['model', 'horizon', 'gain', 'cut']] = ['dual', 2, 0.08, -0.05]
+
+today_signals = pd.concat([priority_signals, ensemble_signals, dual_signals], ignore_index=True)
+today_signals_csv = today_signals.to_csv(index=False)
+
+print(today_signals)
+print(priority_signals)
+
+priority_signals_csv = priority_signals[['ts_code', 'priority']].to_csv(index=False)
+ensemble_signals_csv = ensemble_signals[['ts_code', 'priority']].to_csv(index=False)
+dual_signals_csv = dual_signals[['ts_code', 'priority']].to_csv(index=False)
+
+notify_daily(user='mark', title= trade_date +'_H5', msg="股票代码， 优先级\n"+priority_signals_csv) 
+notify_daily(user='mark', title= trade_date +'_H2', msg="股票代码， 优先级\n"+dual_signals_csv) 
+notify_daily(user='mark', title= trade_date +'_H5', msg="股票代码， 优先级\n"+ensemble_signals_csv) 
+
+notify_daily(user='minw', title= trade_date +'_H5', msg="股票代码， 优先级\n"+priority_signals_csv) 
+notify_daily(user='minw', title= trade_date +'_H2', msg="股票代码， 优先级\n"+dual_signals_csv) 
+notify_daily(user='minw', title= trade_date +'_H5', msg="股票代码， 优先级\n"+ensemble_signals_csv) 
+
+notify_daily(user='lmz', title= trade_date +'_H5', msg="股票代码， 优先级\n"+priority_signals_csv) 
+notify_daily(user='lmz', title= trade_date +'_H2', msg="股票代码， 优先级\n"+dual_signals_csv) 
+notify_daily(user='lmz', title= trade_date +'_H5', msg="股票代码， 优先级\n"+ensemble_signals_csv) 
+
+notify_daily(user='ling', title= trade_date +'_H5', msg="股票代码， 优先级\n"+priority_signals_csv) 
+notify_daily(user='ling', title= trade_date +'_H2', msg="股票代码， 优先级\n"+dual_signals_csv) 
+notify_daily(user='ling', title= trade_date +'_H5', msg="股票代码， 优先级\n"+ensemble_signals_csv) 
+
+priority_rows = [row for row in priority_signals_csv.split('\n') if row]
+dual_rows = [row for row in dual_signals_csv.split('\n') if row]
+
+priority_msg = trade_date + ',H5M80D50\n' + priority_signals_csv
+dual_msg = trade_date + ',H2M80D50\n' + dual_signals_csv
+
+ensemble_rows = [row for row in ensemble_signals_csv.split('\n') if row]
+ensemble_msg = trade_date + ',H5M80D50\n' + ensemble_signals_csv
+
+print('priority:\n', priority_msg)
+print('dual:\n', dual_msg)
+print('ensemble:\n', ensemble_msg)
+
+send_msg = ''
+
+if priority_signals_csv: 
+    send_msg = send_msg + priority_msg
+if dual_signals_csv: 
+    send_msg = send_msg + dual_msg
+if ensemble_signals_csv: 
+    send_msg = send_msg + ensemble_msg
+
+msg_to_server(today_signals_csv)

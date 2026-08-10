@@ -8,6 +8,7 @@ Design:
   - per-stock time-series features and labels are computed before panel merge
   - cross-sectional stock ranks are computed only after clean per-stock rows merge
   - SW L2 code is kept as a categorical feature
+  - minute features are read from bucket files by default, with panel/by-stock fallbacks
 
 Run:
   C:\\Users\\mark_\\anaconda3\\envs\\m1deepl\\python.exe prepare_training_v5b.py --max-stocks 5
@@ -37,6 +38,9 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 MERGED_DIR = Path(STOCK_DATA_DIR) / "merged"
 LIMIT_DIR = Path(STOCK_DATA_DIR) / "limit"
 MINUTE_FEATURE_DIR = PROJECT_ROOT / "processed" / "minute_features_v5b" / "by_stock"
+MINUTE_FEATURE_PANEL = PROJECT_ROOT / "processed" / "minute_features_v5b" / "minute_features_panel.parquet"
+MINUTE_FEATURE_BUCKET_DIR = PROJECT_ROOT / "processed" / "minute_feature_buckets"
+CSI1500_CON_PATH = PROJECT_ROOT / "csi1500con.csv"
 SW_L2_MAPPING_PATH = PROJECT_ROOT / "stock_sw_l2_mapping_since_2023.csv"
 SW_L2_DAILY_PATH = Path(STOCK_INDEX_DIR) / "sw_l2_daily.csv"
 CSI1500_INDEX_PATH = Path(STOCK_INDEX_DIR) / "csi1500_custom_index.csv"
@@ -60,10 +64,13 @@ G_SW_FEAT: pd.DataFrame | None = None
 G_SW_MAPPING: pd.DataFrame | None = None
 G_MINUTE_FEATURE_SOURCE: str | None = None
 G_MINUTE_FEATURE_BY_STOCK: dict[str, pd.DataFrame] | None = None
+G_MINUTE_FEATURE_BUCKET_MAP: dict[str, str] | None = None
+G_MINUTE_FEATURE_BUCKET_CACHE: dict[str, pd.DataFrame] | None = None
 G_SOURCE_START_DATE: str | None = None
 G_SOURCE_END_DATE: str | None = None
 G_OUTPUT_START_DATE: str | None = None
 G_OUTPUT_END_DATE: str | None = None
+G_LAG_MODE: str = "worker"
 
 LAGS_FAST = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 15, 20]
 LAGS_MED = [1, 2, 3, 5, 10, 20]
@@ -197,6 +204,10 @@ BASE_FEATURE_LAGS: dict[str, list[int]] = {
     "auc_c_efficiency": LAGS_FAST,
     "auc_c_vs_close": LAGS_FAST,
     "auction_reversal": LAGS_FAST,
+    "auc_o_signed_efficiency": LAGS_FAST,
+    "auc_c_signed_efficiency": LAGS_FAST,
+    "auction_direction_balance": LAGS_FAST,
+    "auction_to_continuous_return": LAGS_FAST,
     "total_mv_z": LAGS_MED,
     "circ_mv_z": LAGS_MED,
     "winner_rate": LAGS_MED,
@@ -263,6 +274,10 @@ BASE_FEATURE_LAGS: dict[str, list[int]] = {
     "mkt_pos_rate": LAGS_SLOW,
     "mkt_gt3_rate": LAGS_SLOW,
     "mkt_gt5_rate": LAGS_SLOW,
+    "mkt_up_down_ratio_spread": LAGS_SLOW,
+    "mkt_gt2_ltminus2_spread": LAGS_SLOW,
+    "mkt_limit_up_down_spread": LAGS_SLOW,
+    "mkt_breadth_return_alignment": LAGS_SLOW,
     "mkt_limit_up_count": LAGS_SLOW,
     "mkt_limit_down_count": LAGS_SLOW,
     "csi1500_coverage_ratio": LAGS_SLOW,
@@ -580,6 +595,28 @@ BASE_FEATURE_LAGS: dict[str, list[int]] = {
     "late_max_5m_range": LAGS_SLOW,
     "afternoon_minus_morning_ret": LAGS_3D,
     "last60_minus_first60_ret": LAGS_3D,
+    "intraday_direction": LAGS_3D,
+    "signed_trend_efficiency": LAGS_SLOW,
+    "signed_realized_vol_1m": LAGS_SLOW,
+    "up_down_bar_imbalance": LAGS_3D,
+    "late_up_down_bar_imbalance": LAGS_3D,
+    "late_signed_trend_efficiency": LAGS_SLOW,
+    "mean_signed_vwap_distance": LAGS_SLOW,
+    "max_positive_vwap_distance": LAGS_SLOW,
+    "max_negative_vwap_distance": LAGS_SLOW,
+    "last30_signed_vwap_distance": LAGS_SLOW,
+    "last60_signed_vwap_distance": LAGS_SLOW,
+    "vwap_side_imbalance": LAGS_SLOW,
+    "high_low_excursion_imbalance": LAGS_SLOW,
+    "drawup_drawdown_imbalance": LAGS_SLOW,
+    "signed_jump_variation": LAGS_SLOW,
+    "positive_jump_share": LAGS_SLOW,
+    "negative_jump_share": LAGS_SLOW,
+    "large_bar_return_balance": LAGS_SLOW,
+    "amount_weighted_return": LAGS_3D,
+    "volume_return_corr": LAGS_SLOW,
+    "morning_signed_efficiency": LAGS_SLOW,
+    "afternoon_signed_efficiency": LAGS_SLOW,
 }
 
 CROSS_SECTIONAL_LAGS = {
@@ -949,13 +986,16 @@ def init_worker(
     sw_feat: pd.DataFrame,
     sw_mapping: pd.DataFrame,
     minute_feature_source: str | None = None,
+    minute_bucket_con_file: str | None = None,
     source_start_date: str | None = None,
     source_end_date: str | None = None,
     output_start_date: str | None = None,
     output_end_date: str | None = None,
+    lag_mode: str = "worker",
 ) -> None:
     global G_CSI, G_MARKET, G_SW_FEAT, G_SW_MAPPING, G_MINUTE_FEATURE_SOURCE, G_MINUTE_FEATURE_BY_STOCK
-    global G_SOURCE_START_DATE, G_SOURCE_END_DATE, G_OUTPUT_START_DATE, G_OUTPUT_END_DATE
+    global G_MINUTE_FEATURE_BUCKET_MAP, G_MINUTE_FEATURE_BUCKET_CACHE
+    global G_SOURCE_START_DATE, G_SOURCE_END_DATE, G_OUTPUT_START_DATE, G_OUTPUT_END_DATE, G_LAG_MODE
     G_CSI = csi
     G_MARKET = market
     G_SW_FEAT = sw_feat
@@ -964,7 +1004,19 @@ def init_worker(
     G_SOURCE_END_DATE = source_end_date
     G_OUTPUT_START_DATE = output_start_date
     G_OUTPUT_END_DATE = output_end_date
+    G_LAG_MODE = lag_mode
     G_MINUTE_FEATURE_SOURCE = minute_feature_source
+    G_MINUTE_FEATURE_BUCKET_CACHE = {}
+    if minute_feature_source and is_minute_bucket_dir(Path(minute_feature_source)):
+        G_MINUTE_FEATURE_BY_STOCK = None
+        G_MINUTE_FEATURE_BUCKET_MAP = load_minute_bucket_map(minute_bucket_con_file)
+        print(
+            f"[minute-cache] bucket mode map_stocks={len(G_MINUTE_FEATURE_BUCKET_MAP or {})} "
+            f"source={minute_feature_source}",
+            flush=True,
+        )
+        return
+    G_MINUTE_FEATURE_BUCKET_MAP = None
     G_MINUTE_FEATURE_BY_STOCK = load_minute_feature_cache(minute_feature_source)
 
 
@@ -1145,10 +1197,49 @@ def clean_minute_feature_pandas(pdf: pd.DataFrame) -> pd.DataFrame:
     return pdf.sort_values("trade_date").drop_duplicates(["ts_code", "trade_date"], keep="last")
 
 
+def is_minute_bucket_dir(source: Path) -> bool:
+    return source.is_dir() and any(source.glob("bucket_*.parquet"))
+
+
+def normalize_minute_ts_code(value: str) -> str:
+    text = str(value).strip()
+    if not text:
+        return text
+    if "." in text:
+        code, suffix = text.split(".", 1)
+        return f"{code.zfill(6)}.{suffix.upper()}"
+    code = text.zfill(6)
+    if code.startswith(("5", "6", "9")):
+        return f"{code}.SH"
+    return f"{code}.SZ"
+
+
+def load_minute_bucket_map(con_file: str | Path | None) -> dict[str, str]:
+    if not con_file:
+        return {}
+    path = Path(con_file)
+    if not path.exists() or path.stat().st_size == 0:
+        return {}
+    con = pd.read_csv(path, dtype=str)
+    stock_col = None
+    for candidate in ["con_code", "ts_code", "stock_code", "code"]:
+        if candidate in con.columns:
+            stock_col = candidate
+            break
+    if stock_col is None or "minute_bucket_file" not in con.columns:
+        return {}
+    out = {}
+    for _, row in con[[stock_col, "minute_bucket_file"]].dropna().iterrows():
+        out[normalize_minute_ts_code(row[stock_col])] = str(row["minute_bucket_file"]).strip()
+    return out
+
+
 def load_minute_feature_cache(minute_feature_source: str | Path | None) -> dict[str, pd.DataFrame] | None:
     if not minute_feature_source:
         return None
     source = Path(minute_feature_source)
+    if is_minute_bucket_dir(source):
+        return None
     if not source.is_file() or source.stat().st_size == 0:
         return None
     df = pl.read_parquet(source)
@@ -1164,13 +1255,62 @@ def load_minute_feature_cache(minute_feature_source: str | Path | None) -> dict[
     return cache
 
 
+def resolve_minute_feature_source(
+    minute_feature_bucket_dir: str | Path | None,
+    minute_feature_panel: str | Path | None,
+    minute_feature_dir: str | Path | None,
+) -> Path | None:
+    """Prefer bucket minute features, then one-file panel, then legacy per-stock files."""
+    bucket_dir = Path(minute_feature_bucket_dir) if minute_feature_bucket_dir else None
+    panel = Path(minute_feature_panel) if minute_feature_panel else None
+    legacy_dir = Path(minute_feature_dir) if minute_feature_dir else None
+
+    if bucket_dir and is_minute_bucket_dir(bucket_dir):
+        print(f"[minute-source] using bucket_dir={bucket_dir}", flush=True)
+        return bucket_dir
+
+    if panel and panel.exists() and panel.stat().st_size > 0:
+        print(f"[minute-source] using panel={panel}", flush=True)
+        return panel
+
+    if legacy_dir and legacy_dir.exists():
+        print(f"[minute-source] using legacy_dir={legacy_dir}", flush=True)
+        return legacy_dir
+
+    print(
+        "[minute-source] disabled; no existing bucket, panel, or legacy by-stock directory found",
+        flush=True,
+    )
+    return None
+
+
 def read_minute_features(ts_code: str, minute_feature_source: str | Path) -> pd.DataFrame:
     if G_MINUTE_FEATURE_BY_STOCK is not None:
-        cached = G_MINUTE_FEATURE_BY_STOCK.get(str(ts_code))
+        cached = G_MINUTE_FEATURE_BY_STOCK.get(normalize_minute_ts_code(str(ts_code)))
         if cached is None:
             return pd.DataFrame({"ts_code": [], "trade_date": []})
         return cached
     source = Path(minute_feature_source)
+    if is_minute_bucket_dir(source):
+        code = normalize_minute_ts_code(str(ts_code))
+        bucket_file = (G_MINUTE_FEATURE_BUCKET_MAP or {}).get(code)
+        if not bucket_file:
+            return pd.DataFrame({"ts_code": [], "trade_date": []})
+        path = source / bucket_file
+        if not path.exists() or path.stat().st_size == 0:
+            return pd.DataFrame({"ts_code": [], "trade_date": []})
+        global G_MINUTE_FEATURE_BUCKET_CACHE
+        if G_MINUTE_FEATURE_BUCKET_CACHE is None:
+            G_MINUTE_FEATURE_BUCKET_CACHE = {}
+        if bucket_file not in G_MINUTE_FEATURE_BUCKET_CACHE:
+            df = pl.read_parquet(path)
+            df = filter_date_polars(df, G_SOURCE_START_DATE, G_SOURCE_END_DATE)
+            G_MINUTE_FEATURE_BUCKET_CACHE[bucket_file] = clean_minute_feature_pandas(df.to_pandas())
+        bucket = G_MINUTE_FEATURE_BUCKET_CACHE[bucket_file]
+        out = bucket[bucket["ts_code"] == code].copy()
+        if out.empty:
+            return pd.DataFrame({"ts_code": [], "trade_date": []})
+        return out
     path = source / f"{ts_code}.parquet" if source.is_dir() else source
     if not path.exists() or path.stat().st_size == 0:
         return pd.DataFrame({"ts_code": [], "trade_date": []})
@@ -1568,6 +1708,7 @@ def process_one_stock(
         s["auc_o_vol_ratio"] = safe_div(auc_o_vol, s["vol"])
         s["auc_o_close_position"] = safe_div(auc_o_close - auc_o_low, auc_o_range_abs)
         s["auc_o_efficiency"] = safe_div((auc_o_close - auc_o_open).abs(), auc_o_range_abs)
+        s["auc_o_signed_efficiency"] = safe_div(auc_o_close - auc_o_open, auc_o_range_abs)
         s["auc_o_vs_open"] = safe_div(auc_o_close - open_, open_)
 
         s["auc_c_ret"] = safe_div(auc_c_close - auc_c_open, auc_c_open)
@@ -1577,8 +1718,12 @@ def process_one_stock(
         s["auc_c_vol_ratio"] = safe_div(auc_c_vol, s["vol"])
         s["auc_c_close_position"] = safe_div(auc_c_close - auc_c_low, auc_c_range_abs)
         s["auc_c_efficiency"] = safe_div((auc_c_close - auc_c_open).abs(), auc_c_range_abs)
+        s["auc_c_signed_efficiency"] = safe_div(auc_c_close - auc_c_open, auc_c_range_abs)
         s["auc_c_vs_close"] = safe_div(auc_c_close - close, close)
         s["auction_reversal"] = -(s["auc_o_ret"] * s["auc_c_ret"])
+        s["auction_direction_balance"] = s["auc_o_signed_efficiency"] + s["auc_c_signed_efficiency"]
+        s["auction_to_continuous_return"] = s["auc_c_ret"] - s["auc_o_ret"]
+
         s["total_mv_z"] = zscore_safe(s["total_mv"], 120)
         s["circ_mv_z"] = zscore_safe(s["circ_mv"], 120)
 # replace chip data
@@ -1638,6 +1783,17 @@ def process_one_stock(
 
         s = s.merge(csi, on="trade_date", how="left")
         s = s.merge(market, on="trade_date", how="left")
+        # Signed China-market breadth. These inputs become available only
+        # after the custom-index and market panels are joined.
+        s["mkt_up_down_ratio_spread"] = s["csi1500_ew_up_ratio"] - s["csi1500_ew_down_ratio"]
+        s["mkt_gt2_ltminus2_spread"] = (
+            s["csi1500_ew_gt_2pct_ratio"] - s["csi1500_ew_lt_minus_2pct_ratio"]
+        )
+        breadth_scale = s["csi1500_coverage_ratio"].replace(0, np.nan)
+        s["mkt_limit_up_down_spread"] = safe_div(
+            s["mkt_limit_up_count"] - s["mkt_limit_down_count"], breadth_scale
+        )
+        s["mkt_breadth_return_alignment"] = s["mkt_up_down_ratio_spread"] * s["csi1500_ew_ret"]
         sw_map = time_aware_sw_mapping(ts_code, s["trade_date"], sw_mapping)
         s = s.merge(sw_map, on="trade_date", how="left", suffixes=("", "_map"))
         s = s.merge(sw_feat, on=["sw_l2_index_code", "trade_date"], how="left", suffixes=("", "_sw"))
@@ -1713,13 +1869,14 @@ def process_one_stock(
   #      s["stock_ind_strength_5"] = s["ret_5_rel_sw_l2"]
   #      s["stock_ind_strength_20"] = s["ret_20_rel_sw_l2"]
 
-        lagged_cols = {}
-        for col, lags in BASE_FEATURE_LAGS.items():
-            if col in s.columns:
-                for lag in lags:
-                    lagged_cols[f"{col}_lag{lag}"] = s[col].shift(lag)
-        if lagged_cols:
-            s = pd.concat([s, pd.DataFrame(lagged_cols, index=s.index)], axis=1).copy()
+        if G_LAG_MODE == "worker":
+            lagged_cols = {}
+            for col, lags in BASE_FEATURE_LAGS.items():
+                if col in s.columns:
+                    for lag in lags:
+                        lagged_cols[f"{col}_lag{lag}"] = s[col].shift(lag)
+            if lagged_cols:
+                s = pd.concat([s, pd.DataFrame(lagged_cols, index=s.index)], axis=1).copy()
 
         keep_non_numeric = ["ts_code", "trade_date", "sw_l2_code", "sw_l2_index_code"]
         feature_cols = [c for c in s.columns if c in set(BASE_FEATURE_LAGS) or any(c.startswith(f"{b}_lag") for b in BASE_FEATURE_LAGS)]
@@ -1730,7 +1887,6 @@ def process_one_stock(
         ]
         keep = list(dict.fromkeys(keep_non_numeric + raw_for_cs + feature_cols))
         out = compact_stock_frame(s[[c for c in keep if c in s.columns]].copy(), downcast_float32)
-        out = filter_date_pandas(out, G_OUTPUT_START_DATE, G_OUTPUT_END_DATE)
         if out.empty:
             return {"ts_code": ts_code, "status": "no_output_rows", "rows": 0, "output_file": ""}
         output_file = ""
@@ -1872,6 +2028,21 @@ def add_cross_sectional_features(panel: pl.DataFrame, sw_rank: pl.DataFrame) -> 
     return panel
 
 
+def add_base_lag_features_panel(panel: pl.DataFrame) -> pl.DataFrame:
+    """Add per-stock lag features after the stock frames have been merged."""
+    panel = panel.sort(["ts_code", "trade_date"])
+    lag_exprs = []
+    for col, lags in BASE_FEATURE_LAGS.items():
+        if col in panel.columns:
+            for lag in lags:
+                lag_name = f"{col}_lag{lag}"
+                if lag_name not in panel.columns:
+                    lag_exprs.append(pl.col(col).shift(lag).over("ts_code").alias(lag_name))
+    if lag_exprs:
+        panel = panel.with_columns(lag_exprs)
+    return panel
+
+
 def save_feature_dictionary(path: Path, columns: Iterable[str]) -> None:
     rows = []
     non_features = {
@@ -1888,9 +2059,72 @@ def save_feature_dictionary(path: Path, columns: Iterable[str]) -> None:
     pd.DataFrame(rows).to_csv(path, index=False, encoding="utf_8_sig")
 
 
+def finalize_panel_out_of_core(
+    source_paths: list[Path],
+    sw_rank: pl.DataFrame,
+    final_path: Path,
+    work_dir: Path,
+    date_batch_size: int,
+    output_start_date: str | None,
+    output_end_date: str | None,
+    lag_mode: str,
+) -> tuple[int, int, str | None, str | None, list[str]]:
+    """Finalize cross-sectional features in bounded date batches."""
+    if not source_paths:
+        raise RuntimeError("Out-of-core finalization has no source parquet files")
+    shutil.rmtree(work_dir, ignore_errors=True)
+    work_dir.mkdir(parents=True, exist_ok=True)
+    source = pl.concat([pl.scan_parquet(path) for path in source_paths], how="diagonal_relaxed")
+    panel_rows_before_cs = int(source.select(pl.len()).collect(engine="streaming").item())
+    dates = (
+        source.select(pl.col("trade_date").cast(pl.Utf8).unique().sort())
+        .collect(engine="streaming").get_column("trade_date").to_list()
+    )
+    max_lag = max((max(v) for v in CROSS_SECTIONAL_LAGS.values() if v), default=0)
+    if lag_mode == "panel":
+        max_lag = max(max_lag, max((max(v) for v in BASE_FEATURE_LAGS.values() if v), default=0))
+    written: list[Path] = []
+    for batch_no, start in enumerate(range(0, len(dates), date_batch_size), 1):
+        core_dates = dates[start:start + date_batch_size]
+        context_dates = dates[max(0, start - max_lag):start + date_batch_size]
+        frame = (
+            source.filter(pl.col("trade_date").cast(pl.Utf8).is_in(context_dates))
+            .collect(engine="streaming")
+        )
+        frame = add_cross_sectional_features(frame, sw_rank)
+        if lag_mode == "panel":
+            frame = add_base_lag_features_panel(frame)
+        frame = frame.filter(pl.col("trade_date").cast(pl.Utf8).is_in(core_dates))
+        frame = filter_date_polars(frame, output_start_date, output_end_date)
+        if frame.height:
+            path = work_dir / f"final_{batch_no:04d}.parquet"
+            frame.sort(["trade_date", "ts_code"]).write_parquet(path, compression="zstd")
+            written.append(path)
+        print(
+            f"[finalize {batch_no}/{math.ceil(len(dates) / date_batch_size)}] "
+            f"core_dates={len(core_dates)} context_dates={len(context_dates)} rows={frame.height}",
+            flush=True,
+        )
+        del frame
+    if not written:
+        raise RuntimeError("Out-of-core finalization produced no rows")
+    final_scan = pl.concat([pl.scan_parquet(path) for path in written], how="diagonal_relaxed")
+    final_scan.with_row_index(name="sample_id", offset=0).sink_parquet(
+        final_path, compression="zstd", maintain_order=True, mkdir=True, engine="streaming"
+    )
+    final = pl.scan_parquet(final_path)
+    stats = final.select(
+        pl.len().alias("rows"),
+        pl.col("trade_date").min().alias("date_min"),
+        pl.col("trade_date").max().alias("date_max"),
+    ).collect(engine="streaming").row(0, named=True)
+    columns = list(final.collect_schema().names())
+    return panel_rows_before_cs, int(stats["rows"]), stats["date_min"], stats["date_max"], columns
+
+
 def main() -> None:
     global OUT_DIR, SINGLE_DIR, CHUNK_DIR, REPORT_DIR, FINAL_PATH, PANEL_NO_CS_PATH, FEATURE_DICT_PATH
-    global G_SOURCE_START_DATE, G_SOURCE_END_DATE, G_OUTPUT_START_DATE, G_OUTPUT_END_DATE
+    global G_SOURCE_START_DATE, G_SOURCE_END_DATE, G_OUTPUT_START_DATE, G_OUTPUT_END_DATE, G_LAG_MODE
     t0 = time.perf_counter()
     parser = argparse.ArgumentParser()
     parser.add_argument("--max-stocks", type=int, default=None, help="Process only the first N eligible stocks.")
@@ -1926,6 +2160,15 @@ def main() -> None:
         ),
     )
     parser.add_argument(
+        "--lag-mode",
+        choices=["worker", "panel"],
+        default="worker",
+        help=(
+            "worker keeps the historical behavior: per-stock lags are created before merge. "
+            "panel keeps source rows, computes cross-sectional features after merge, then creates base lags in one Polars panel pass."
+        ),
+    )
+    parser.add_argument(
         "--downcast-float32",
         action="store_true",
         help="Optionally downcast float columns to float32 before worker return/write. Default keeps float64.",
@@ -1936,16 +2179,40 @@ def main() -> None:
         help="Also save per-stock feature parquet files for debugging/recovery.",
     )
     parser.add_argument(
+        "--finalize-mode",
+        choices=["memory", "out-of-core"],
+        default="memory",
+        help="Final panel processing mode. out-of-core batches dates and streams the final parquet.",
+    )
+    parser.add_argument(
+        "--finalize-date-batch-size",
+        type=int,
+        default=10,
+        help="Core trading dates per out-of-core finalization batch (plus lag overlap).",
+    )
+    parser.add_argument(
+        "--minute-feature-bucket-dir",
+        type=Path,
+        default=MINUTE_FEATURE_BUCKET_DIR,
+        help="Directory containing bucket_*.parquet no-lag minute feature files. Preferred when present.",
+    )
+    parser.add_argument(
+        "--minute-bucket-con-file",
+        type=Path,
+        default=CSI1500_CON_PATH,
+        help="Constituent CSV with minute_bucket_file mapping for --minute-feature-bucket-dir.",
+    )
+    parser.add_argument(
         "--minute-feature-dir",
         type=Path,
         default=MINUTE_FEATURE_DIR,
-        help="Directory containing prebuilt per-stock 1-minute feature parquet files, or a panel parquet file.",
+        help="Legacy directory containing prebuilt per-stock 1-minute feature parquet files.",
     )
     parser.add_argument(
         "--minute-feature-panel",
         type=Path,
-        default=None,
-        help="Optional single panel parquet from build_minute_features_v5b.py --output-mode chunked/memory.",
+        default=MINUTE_FEATURE_PANEL,
+        help="Single no-lag minute feature panel parquet. Preferred over --minute-feature-dir when present.",
     )
     args = parser.parse_args()
 
@@ -1966,8 +2233,14 @@ def main() -> None:
     G_SOURCE_END_DATE = source_end_date
     G_OUTPUT_START_DATE = output_start_date
     G_OUTPUT_END_DATE = output_end_date
+    G_LAG_MODE = args.lag_mode
 
-    minute_feature_source = args.minute_feature_panel or args.minute_feature_dir
+    minute_feature_source = resolve_minute_feature_source(
+        args.minute_feature_bucket_dir,
+        args.minute_feature_panel,
+        args.minute_feature_dir,
+    )
+    minute_feature_source_arg = str(minute_feature_source) if minute_feature_source is not None else ""
 
     if args.clean and OUT_DIR.exists():
         shutil.rmtree(OUT_DIR)
@@ -1994,7 +2267,8 @@ def main() -> None:
     print(
         "[date-window] "
         f"source_start={source_start_date or 'min'} source_end={source_end_date or 'max'} "
-        f"output_start={output_start_date or 'min'} output_end={output_end_date or 'max'}",
+        f"output_start={output_start_date or 'min'} output_end={output_end_date or 'max'} "
+        f"lag_mode={args.lag_mode}",
         flush=True,
     )
 
@@ -2011,11 +2285,13 @@ def main() -> None:
                 market,
                 sw_feat,
                 sw_mapping,
-                str(minute_feature_source),
+                minute_feature_source_arg,
+                str(args.minute_bucket_con_file),
                 source_start_date,
                 source_end_date,
                 output_start_date,
                 output_end_date,
+                args.lag_mode,
             ),
         ) as ex:
             futs = [
@@ -2028,7 +2304,7 @@ def main() -> None:
                     args.downcast_float32,
                     str(SINGLE_DIR),
                     str(CHUNK_DIR),
-                    str(minute_feature_source),
+                    minute_feature_source_arg,
                 )
                 for chunk_id, chunk in enumerate(chunks, 1)
             ]
@@ -2052,11 +2328,13 @@ def main() -> None:
             market,
             sw_feat,
             sw_mapping,
-            str(minute_feature_source),
+            minute_feature_source_arg,
+            str(args.minute_bucket_con_file),
             source_start_date,
             source_end_date,
             output_start_date,
             output_end_date,
+            args.lag_mode,
         )
         for i, path in enumerate(stock_files, 1):
             res = process_one_stock(
@@ -2065,7 +2343,7 @@ def main() -> None:
                 return_stock_data,
                 args.downcast_float32,
                 str(SINGLE_DIR),
-                str(minute_feature_source),
+                minute_feature_source_arg,
             )
             data = res.pop("data", None)
             if data is not None:
@@ -2086,11 +2364,13 @@ def main() -> None:
                 market,
                 sw_feat,
                 sw_mapping,
-                str(minute_feature_source),
+                minute_feature_source_arg,
+                str(args.minute_bucket_con_file),
                 source_start_date,
                 source_end_date,
                 output_start_date,
                 output_end_date,
+                args.lag_mode,
             ),
         ) as ex:
             futs = [
@@ -2101,7 +2381,7 @@ def main() -> None:
                     return_stock_data,
                     args.downcast_float32,
                     str(SINGLE_DIR),
-                    str(minute_feature_source),
+                    minute_feature_source_arg,
                 )
                 for path in stock_files
             ]
@@ -2120,30 +2400,51 @@ def main() -> None:
 
     pd.DataFrame(results).to_csv(REPORT_DIR / "single_stock_processing_summary.csv", index=False, encoding="utf_8_sig")
     saved_count = sum(1 for r in results if r.get("status") == "saved")
+    source_paths: list[Path] = []
     if args.merge_mode == "disk":
         saved_files = [Path(r["output_file"]) for r in results if r.get("status") == "saved" and r.get("output_file")]
         if not saved_files:
             raise RuntimeError("No single-stock parquet files were produced.")
-        panel = pl.concat([pl.scan_parquet(p) for p in saved_files], how="diagonal_relaxed").collect()
+        source_paths = saved_files
     elif args.merge_mode == "chunked" and args.workers > 1:
         if not chunk_files:
             raise RuntimeError("No chunk parquet files were produced.")
-        panel = pl.concat([pl.scan_parquet(p) for p in chunk_files], how="diagonal_relaxed").collect()
+        source_paths = chunk_files
+    if args.finalize_mode == "out-of-core":
+        if not source_paths:
+            raise ValueError("--finalize-mode out-of-core requires --merge-mode disk or multi-worker chunked")
+        panel_rows_before_cs, final_rows, final_date_min, final_date_max, final_columns = finalize_panel_out_of_core(
+            source_paths=source_paths,
+            sw_rank=pl.from_pandas(sw_rank),
+            final_path=FINAL_PATH,
+            work_dir=OUT_DIR / "finalize_chunks",
+            date_batch_size=max(1, args.finalize_date_batch_size),
+            output_start_date=output_start_date,
+            output_end_date=output_end_date,
+            lag_mode=args.lag_mode,
+        )
+        save_feature_dictionary(FEATURE_DICT_PATH, final_columns)
     else:
-        if not stock_frames:
-            raise RuntimeError("No single-stock feature frames were produced.")
-        panel = pl.concat(stock_frames, how="diagonal_relaxed")
-    panel_rows_before_cs = panel.height
-    panel.write_parquet(PANEL_NO_CS_PATH)
-    # Stable final order + permanent integer key
-    panel = (
-        panel
-        .sort(["trade_date", "ts_code"])
-        .with_row_index(name="sample_id", offset=0)
-    )
-    panel = add_cross_sectional_features(panel, pl.from_pandas(sw_rank))
-    panel.write_parquet(FINAL_PATH)
-    save_feature_dictionary(FEATURE_DICT_PATH, panel.columns)
+        if source_paths:
+            panel = pl.concat([pl.scan_parquet(p) for p in source_paths], how="diagonal_relaxed").collect()
+        else:
+            if not stock_frames:
+                raise RuntimeError("No single-stock feature frames were produced.")
+            panel = pl.concat(stock_frames, how="diagonal_relaxed")
+        panel_rows_before_cs = panel.height
+        panel.write_parquet(PANEL_NO_CS_PATH)
+        panel = panel.sort(["trade_date", "ts_code"])
+        panel = add_cross_sectional_features(panel, pl.from_pandas(sw_rank))
+        if args.lag_mode == "panel":
+            panel = add_base_lag_features_panel(panel)
+        panel = filter_date_polars(panel, output_start_date, output_end_date)
+        panel = panel.sort(["trade_date", "ts_code"]).with_row_index(name="sample_id", offset=0)
+        panel.write_parquet(FINAL_PATH)
+        save_feature_dictionary(FEATURE_DICT_PATH, panel.columns)
+        final_rows = panel.height
+        final_date_min = panel.select(pl.col("trade_date").min()).item()
+        final_date_max = panel.select(pl.col("trade_date").max()).item()
+        final_columns = panel.columns
 
     elapsed_sec = time.perf_counter() - t0
     summary = {
@@ -2151,14 +2452,19 @@ def main() -> None:
         "single_stock_success_count": saved_count,
         "single_stock_failure_count": len(results) - saved_count,
         "panel_rows_before_cs": panel_rows_before_cs,
-        "final_rows": panel.height,
-        "date_min": panel.select(pl.col("trade_date").min()).item(),
-        "date_max": panel.select(pl.col("trade_date").max()).item(),
-        "column_count": len(panel.columns),
-        "minute_feature_source": str(minute_feature_source),
+        "final_rows": final_rows,
+        "date_min": final_date_min,
+        "date_max": final_date_max,
+        "column_count": len(final_columns),
+        "minute_feature_source": minute_feature_source_arg,
+        "minute_feature_bucket_dir": str(args.minute_feature_bucket_dir),
+        "minute_bucket_con_file": str(args.minute_bucket_con_file),
         "save_single_stock": effective_save_single,
         "merge_mode": args.merge_mode,
+        "lag_mode": args.lag_mode,
         "downcast_float32": args.downcast_float32,
+        "finalize_mode": args.finalize_mode,
+        "finalize_date_batch_size": args.finalize_date_batch_size,
         "source_start_date": source_start_date,
         "source_end_date": source_end_date,
         "output_start_date": output_start_date,

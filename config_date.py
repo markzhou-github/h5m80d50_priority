@@ -205,7 +205,7 @@ def resolve_upday_feature_source_window(
     return source_start, resolved_start, resolved_end
 
 
-allday_start_date = '20250801'
+allday_start_date = '20250901'
 End_date = last_trade_date()
 end_date = End_date
 UPDAY_LOOKBACK_TRADE_DAYS = 30

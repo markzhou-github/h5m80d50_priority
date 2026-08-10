@@ -40,7 +40,7 @@ BASE_DIR = Path(STOCK_DATA_DIR)
 REPORT_DIR = BASE_DIR / "report"
 
 MAX_RETRIES = 5
-DEFAULT_LOOKBACK_TRADE_DAYS = 10
+DEFAULT_LOOKBACK_TRADE_DAYS = 30
 
 DATASETS = ["stkfactor", "moneyflow", "cyq_perf", "auction_o", "auction_c", "limit"]
 SUFFIX = {

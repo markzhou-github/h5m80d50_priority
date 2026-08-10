@@ -148,6 +148,15 @@ FEATURE_COLUMNS = [
     "start_minute_longest_up_run", "start_minute_longest_up_run_raw",
     "start_minute_longest_down_run", "start_minute_longest_down_run_raw",
     "late_max_5m_drop", "late_max_5m_range", "afternoon_minus_morning_ret", "last60_minus_first60_ret",
+    # Direction-preserving counterparts to unsigned intensity features.
+    "intraday_direction", "signed_trend_efficiency", "signed_realized_vol_1m",
+    "up_down_bar_imbalance", "late_up_down_bar_imbalance", "late_signed_trend_efficiency",
+    "mean_signed_vwap_distance", "max_positive_vwap_distance", "max_negative_vwap_distance",
+    "last30_signed_vwap_distance", "last60_signed_vwap_distance", "vwap_side_imbalance",
+    "high_low_excursion_imbalance", "drawup_drawdown_imbalance",
+    "signed_jump_variation", "positive_jump_share", "negative_jump_share",
+    "large_bar_return_balance", "amount_weighted_return", "volume_return_corr",
+    "morning_signed_efficiency", "afternoon_signed_efficiency",
 ]
 
 def normalize_ts_code(code: str) -> str:
@@ -681,6 +690,16 @@ def build_one_day(
     row["realized_down_semivar"] = down_semivar
     row["realized_semivar_imbalance"] = safe_div(up_semivar - down_semivar, up_semivar + down_semivar)
     row["trend_efficiency"] = abs(full_path_ret) / path_abs_sum if np.isfinite(full_path_ret) and path_abs_sum > EPS else 0.0
+    direction = float(np.sign(full_path_ret)) if np.isfinite(full_path_ret) else np.nan
+    row["intraday_direction"] = direction
+    row["signed_trend_efficiency"] = (
+        full_path_ret / path_abs_sum if np.isfinite(full_path_ret) and path_abs_sum > EPS else 0.0
+    )
+    row["signed_realized_vol_1m"] = (
+        direction * row["realized_vol_1m"]
+        if np.isfinite(direction) and np.isfinite(row["realized_vol_1m"])
+        else np.nan
+    )
     row["intraday_sign_changes"] = sign_change_count(path_ret)
     pr = finite(path_ret)
     if len(pr) >= 3 and pr.std(ddof=0) > EPS:
@@ -695,6 +714,7 @@ def build_one_day(
         row["realized_kurtosis"] = np.nan
     row["up_bar_ratio"] = float(np.nanmean(path_ret > 0))
     row["down_bar_ratio"] = float(np.nanmean(path_ret < 0))
+    row["up_down_bar_imbalance"] = row["up_bar_ratio"] - row["down_bar_ratio"]
     row["pct_bars_above_vwap"] = float(np.nanmean(close > cum_vwap))
     row["pct_time_above_vwap"] = row["pct_bars_above_vwap"]
     above = np.sign(finite(close_minus_vwap))
@@ -708,6 +728,18 @@ def build_one_day(
     row["std_vwap_distance"] = safe_std(vwap_distance)
     row["last30_vwap_distance"] = safe_mean(abs_vwap_distance[idx_all[-30:]])
     row["last60_vwap_distance"] = safe_mean(abs_vwap_distance[idx_all[-60:]])
+    row["mean_signed_vwap_distance"] = safe_mean(vwap_distance)
+    row["max_positive_vwap_distance"] = (
+        float(np.nanmax(vwap_distance)) if np.isfinite(vwap_distance).any() else np.nan
+    )
+    row["max_negative_vwap_distance"] = (
+        float(np.nanmin(vwap_distance)) if np.isfinite(vwap_distance).any() else np.nan
+    )
+    row["last30_signed_vwap_distance"] = safe_mean(vwap_distance[idx_all[-30:]])
+    row["last60_signed_vwap_distance"] = safe_mean(vwap_distance[idx_all[-60:]])
+    row["vwap_side_imbalance"] = float(
+        np.nanmean(close > cum_vwap) - np.nanmean(close < cum_vwap)
+    )
     row["close_vwap_distance"] = close[-1] / daily_vwap - 1.0 if np.isfinite(daily_vwap) and abs(daily_vwap) > EPS else np.nan
     close_abs_vwap_distance = abs(row["close_vwap_distance"]) if np.isfinite(row["close_vwap_distance"]) else np.nan
     row["vwap_recovery_ratio"] = (
@@ -735,6 +767,23 @@ def build_one_day(
     running_peak = np.maximum.accumulate(close)
     drawdown = np.where(running_peak > EPS, close / running_peak - 1.0, np.nan)
     row["intraday_max_drawdown"] = float(np.nanmin(drawdown)) if np.isfinite(drawdown).any() else np.nan
+    upside_excursion = float(np.nanmax(high / open_[0] - 1.0)) if abs(open_[0]) > EPS else np.nan
+    downside_excursion = float(np.nanmin(low / open_[0] - 1.0)) if abs(open_[0]) > EPS else np.nan
+    excursion_denom = max(upside_excursion, 0.0) + max(-downside_excursion, 0.0)
+    row["high_low_excursion_imbalance"] = safe_div(
+        max(upside_excursion, 0.0) - max(-downside_excursion, 0.0), excursion_denom
+    )
+    running_trough = np.minimum.accumulate(close)
+    drawup = np.where(running_trough > EPS, close / running_trough - 1.0, np.nan)
+    max_drawup = float(np.nanmax(drawup)) if np.isfinite(drawup).any() else np.nan
+    max_drawdown_abs = (
+        abs(row["intraday_max_drawdown"])
+        if np.isfinite(row["intraday_max_drawdown"])
+        else np.nan
+    )
+    row["drawup_drawdown_imbalance"] = safe_div(
+        max_drawup - max_drawdown_abs, max_drawup + max_drawdown_abs
+    )
     row["drawdown_duration"], _ = longest_true_run(close < running_peak)
     high_pos = int(np.nanargmax(high))
     low_pos = int(np.nanargmin(low))
@@ -784,6 +833,27 @@ def build_one_day(
     )
     row["jump_variation"] = max(0.0, total_var - row["bipower_variation"]) if np.isfinite(row["bipower_variation"]) else np.nan
     row["jump_variation_share"] = safe_div(row["jump_variation"], total_var)
+    row["signed_jump_variation"] = (
+        row["jump_variation"] * row["realized_semivar_imbalance"]
+        if np.isfinite(row["jump_variation"]) and np.isfinite(row["realized_semivar_imbalance"])
+        else np.nan
+    )
+    row["positive_jump_share"] = safe_div(up_semivar, total_var)
+    row["negative_jump_share"] = safe_div(down_semivar, total_var)
+    finite_idx = np.flatnonzero(np.isfinite(path_ret))
+    if len(finite_idx):
+        top_idx = finite_idx[np.argsort(np.abs(path_ret[finite_idx]))[-min(10, len(finite_idx)):]]
+        row["large_bar_return_balance"] = safe_div(
+            float(np.sum(path_ret[top_idx])), float(np.sum(np.abs(path_ret[top_idx])))
+        )
+    else:
+        row["large_bar_return_balance"] = np.nan
+    valid_amount_ret = np.isfinite(path_ret) & np.isfinite(amount)
+    row["amount_weighted_return"] = safe_div(
+        float(np.sum(path_ret[valid_amount_ret] * amount[valid_amount_ret])),
+        float(np.sum(amount[valid_amount_ret])),
+    )
+    row["volume_return_corr"] = safe_corr(path_ret, vol)
     row["first30_vol_share"] = realized_vol_share(path_ret, idx_all[:30], row["realized_vol_1m"])
     row["morning_vol_share"] = realized_vol_share(path_ret, idx_all[morning_mask], row["realized_vol_1m"])
     row["afternoon_vol_share"] = realized_vol_share(path_ret, idx_all[afternoon_mask], row["realized_vol_1m"])
@@ -797,6 +867,16 @@ def build_one_day(
 
     row["morning_efficiency"] = trend_efficiency(open_[morning_mask], close[morning_mask])
     row["afternoon_efficiency"] = trend_efficiency(open_[afternoon_mask], close[afternoon_mask])
+    row["morning_signed_efficiency"] = (
+        np.sign(row["morning_ret"]) * row["morning_efficiency"]
+        if np.isfinite(row.get("morning_ret", np.nan)) and np.isfinite(row["morning_efficiency"])
+        else np.nan
+    )
+    row["afternoon_signed_efficiency"] = (
+        np.sign(row["afternoon_ret"]) * row["afternoon_efficiency"]
+        if np.isfinite(row.get("afternoon_ret", np.nan)) and np.isfinite(row["afternoon_efficiency"])
+        else np.nan
+    )
     row["morning_afternoon_corr"] = safe_corr(pct_change(close[morning_mask])[1:], pct_change(close[afternoon_mask])[1:])
 
     if prev_close is not None and np.isfinite(prev_close) and prev_close > EPS:
@@ -838,8 +918,21 @@ def build_one_day(
     late_ret = pct_change(late_close)
     late_ret[0] = late_close[0] / late_open[0] - 1.0 if len(late_close) and abs(late_open[0]) > EPS else np.nan
     row["late_up_bar_ratio"] = float(np.nanmean(late_ret > 0))
+    late_down_bar_ratio = float(np.nanmean(late_ret < 0))
+    row["late_up_down_bar_imbalance"] = row["late_up_bar_ratio"] - late_down_bar_ratio
     row["late_realized_vol_5m"] = safe_std(late_ret)
     row["late_realized_vol_1m"] = realized_vol(late_ret)
+    late_abs_sum = float(np.nansum(np.abs(late_ret)))
+    late_total_ret = (
+        late_close[-1] / late_open[0] - 1.0
+        if len(late_close) and abs(late_open[0]) > EPS
+        else np.nan
+    )
+    row["late_signed_trend_efficiency"] = (
+        late_total_ret / late_abs_sum
+        if np.isfinite(late_total_ret) and late_abs_sum > EPS
+        else 0.0
+    )
     late_drop = rolling_return(late_close, 5)
     late_range = rolling_range(late_high, late_low, late_open, 5)
     row["late_max_5m_drop"] = float(np.nanmin(late_drop)) if np.isfinite(late_drop).any() else np.nan

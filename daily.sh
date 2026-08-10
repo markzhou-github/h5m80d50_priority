@@ -57,10 +57,10 @@ run_step "download_sw_l2_daily.py" \
     python download_sw_l2_daily.py
 
 run_step "download_csi1500_daily_upday.py" \
-    python download_csi1500_daily_upday.py --workers 2
+    python download_csi1500_daily_upday.py --workers 2 --lookback-trade-days 60
 
 run_step "download_csi1500_margin_detail_upday.py" \
-    python download_csi1500_margin_detail_upday.py
+    python download_csi1500_margin_detail_upday.py --start-upday 20260410
 
 run_step "download_1min_upday.py" \
     python download_1min_upday.py --workers 4
@@ -73,3 +73,9 @@ run_step "merge_csi1500_daily_polars.py, incomplete only for custom index" \
 
 run_step "build_csi1500_custom_index.py" \
     python build_csi1500_custom_index.py
+    
+echo python 01_upday_minute_buckets_and_features.py
+python 01_upday_minute_buckets_and_features.py \
+  --lookback-trade-days 30 \
+  --source-start-date 20250801 \
+  --download-workers 4
