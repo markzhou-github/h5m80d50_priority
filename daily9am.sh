@@ -11,9 +11,9 @@ mkdir -p "$LOG_DIR"
 echo "Script started. Waiting until 9:00 AM..."
 
 # Loop until the current time matches 09:00
-while [[ "$(date +%H:%M)" != "09:00" ]]; do
-    sleep 1
-done
+#while [[ "$(date +%H:%M)" != "09:00" ]]; do
+#    sleep 1
+#done
 
 echo "It is 9:00 AM. Executing command..."
 
