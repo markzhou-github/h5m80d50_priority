@@ -10,10 +10,26 @@ mkdir -p "$LOG_DIR"
 
 echo "Script started. Waiting until 9:00 AM..."
 
-# Loop until the current time matches 09:00
-#while [[ "$(date +%H:%M)" != "09:00" ]]; do
-#    sleep 1
-#done
+# Detect OS and calculate seconds until 9am
+now=$(date +%s)
+
+if [[ "$(uname)" == "Darwin" ]]; then
+    # macOS
+    target=$(date -j -f "%H:%M:%S" "09:00:00" +%s)
+else
+    # Linux
+    target=$(date -d "today 09:00:00" +%s)
+fi
+
+# If 9am already passed today, skip the wait
+if [[ "$now" -lt "$target" ]]; then
+    wait_seconds=$(( target - now ))
+    echo "Waiting until 9am... (sleeping for $wait_seconds seconds)"
+    sleep "$wait_seconds"
+fi
+
+# --- Your code below runs at or after 9am, then exits ---
+echo "It's $(date +%H:%M), running now..."
 
 echo "It is 9:00 AM. Executing command..."
 
