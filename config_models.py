@@ -6,6 +6,7 @@ MODEL_CONFIGS = {
         "priority_name_column": "priority_name",
         "priority_mapping": {
             "P1": 1,
+            "P1B_low_turnover_exception": 1, 
             "P2_current_broader": 2,
             "avg_top1|avg_top3": 2,
             "avg_top1|avg_top3|vote3_top3": 2,
