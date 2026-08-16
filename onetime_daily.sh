@@ -62,8 +62,8 @@ run_step "download_csi1500_daily.py" \
 run_step "download_csi1500_margin_detail.py" \
     python download_csi1500_margin_detail.py 
 
-run_step "download_1min_upday.py" \
-    python download_1min_upday.py --workers 4 --lookback-trade-days 120
+run_step "download_1min_upday_all.py" \
+    python download_1min_upday.py --workers 4 --start-upday 20250901
 
 #run_step "build_minute_features_v5b.py" \
 #    python build_minute_features_v5b.py  --start-date 20250901 --output-mode by_stock --workers 8 --overwrite

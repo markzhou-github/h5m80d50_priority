@@ -57,13 +57,13 @@ run_step "download_sw_l2_daily.py" \
     python download_sw_l2_daily.py
 
 run_step "download_csi1500_daily_upday.py" \
-    python download_csi1500_daily_upday.py --workers 2 --lookback-trade-days 60
+    python download_csi1500_daily_upday.py --workers 2 --lookback-trade-days 90
 
 run_step "download_csi1500_margin_detail_upday.py" \
     python download_csi1500_margin_detail_upday.py --start-upday 20260410
 
-run_step "download_1min_upday.py" \
-    python download_1min_upday.py --workers 4
+run_step "download_1min_upday_all.py" \
+    python download_1min_upday_all.py --workers 4 
 
 run_step "build_minute_features_v5b.py" \
     python build_minute_features_v5b.py  --start-date 20250801 --output-mode by_stock --workers 8 --overwrite
