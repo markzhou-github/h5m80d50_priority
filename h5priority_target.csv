@@ -1,4 +1,7 @@
 ﻿model,ts_code,trade_date,priority_name,priority,target,ret,ret_ew,buy,sell,holding_days,exit_reason,csi1500_ew
+h5m80d50_priority,301392.SZ,20260814,P3_global_china_expansion,3.0,,,,,,,,
+h5m80d50_priority,688048.SH,20260814,P3_global_china_expansion,3.0,,,,,,,,
+h5m80d50_priority,688766.SH,20260814,P3_global_china_expansion,3.0,,,,,,,,
 h5m80d50_priority,002081.SZ,20260813,,,,0.0,0.0003557209790209237,5.29,,1.0,,-0.0003557209790209237
 h5m80d50_priority,300223.SZ,20260813,,,,0.014910607024238631,0.015266328003259555,141.51,,1.0,,-0.0003557209790209237
 h5m80d50_priority,688048.SH,20260813,,,,0.027769542444905593,0.028125263423926516,303.57,,1.0,,-0.0003557209790209237
