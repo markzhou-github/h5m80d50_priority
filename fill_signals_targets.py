@@ -25,8 +25,13 @@ Signal date is T. Buy at T+1 open. For horizon H, the final day is T+H.
 All stock returns are adjusted by subtracting the compounded CSI1500 equal-
 weight daily close return from T+1 through the exit date.
 
-Rows with an existing non-null target are never changed. Rows without enough
-future market data are left unfilled so the script can be run again later.
+The model column selects horizon, gain, and cut from MODEL_CONFIGS. Configured
+gain/cut values are percentages (for example, 8.0 means 8%).
+
+Rows with an existing non-null target are never changed. Open positions are
+marked to the latest available close: buy, ret, ret_ew, holding_days, and
+csi1500_ew are refreshed while target and sell remain blank. The script can be
+run again as new market data arrive.
 """
 
 from __future__ import annotations
@@ -42,6 +47,37 @@ import pandas as pd
 
 EPS = 1e-12
 
+
+from config_models import MODEL_CONFIGS
+
+
+def get_model_parameters(model_name: str) -> tuple[int, float, float]:
+    """Return horizon and decimal gain/cut thresholds for one model."""
+    if model_name not in MODEL_CONFIGS:
+        raise ValueError(
+            f"Unknown model {model_name!r}; available models: "
+            f"{sorted(MODEL_CONFIGS)}"
+        )
+
+    config = MODEL_CONFIGS[model_name]
+    missing = [name for name in ("horizon", "gain", "cut") if name not in config]
+    if missing:
+        raise ValueError(
+            f"MODEL_CONFIGS[{model_name!r}] is missing parameters {missing}"
+        )
+
+    horizon_value = to_finite_float(config["horizon"], f"{model_name}.horizon")
+    horizon = int(horizon_value)
+    if horizon_value != horizon or horizon < 1:
+        raise ValueError(
+            f"Invalid {model_name}.horizon: {config['horizon']!r}; "
+            "expected a positive integer"
+        )
+
+    # MODEL_CONFIGS stores percentage points: 8.0 -> 0.08, -5.0 -> -0.05.
+    gain = to_finite_float(config["gain"], f"{model_name}.gain") / 100.0
+    cut = to_finite_float(config["cut"], f"{model_name}.cut") / 100.0
+    return horizon, gain, cut
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -188,9 +224,9 @@ def detect_benchmark_return(
 
 def find_stock_file(stock_dir: Path, ts_code: str) -> Path | None:
     candidates = [
-        stock_dir / f"{ts_code}.csv",
-        stock_dir / f"{ts_code.replace('.', '_')}.csv",
-        stock_dir / f"{ts_code.replace('.', '')}.csv",
+        stock_dir / f"{ts_code}.all.csv",
+        stock_dir / f"{ts_code.replace('.', '_')}.all.csv",
+        stock_dir / f"{ts_code.replace('.', '')}.all.csv",
     ]
     for path in candidates:
         if path.exists():
@@ -253,7 +289,7 @@ def calculate_result(
     trading_dates: pd.DatetimeIndex,
     calendar_pos: dict[pd.Timestamp, int],
 ) -> dict[str, Any] | None:
-    """Calculate one signal. Return None when future data are not yet complete."""
+    """Calculate an exit or return the latest close-to-date open-position mark."""
     if horizon < 1:
         raise ValueError(f"horizon must be >= 1, got {horizon}")
 
@@ -264,24 +300,36 @@ def calculate_result(
 
     buy_pos = t_pos + 1
     last_pos = t_pos + horizon
-    if buy_pos >= len(trading_dates) or last_pos >= len(trading_dates):
+    if buy_pos >= len(trading_dates):
         return None
 
     buy_date = trading_dates[buy_pos]
-    last_date = trading_dates[last_pos]
-    required_dates = trading_dates[buy_pos : last_pos + 1]
-
-    # We need all stock trading days through expiry. Missing/suspended data are
-    # intentionally left unresolved rather than silently shifting execution.
-    if not required_dates.isin(stock.index).all():
-        return None
-
-    px = stock.reindex(required_dates)
-    if px[["open", "high", "close"]].isna().any().any():
+    if buy_date not in stock.index:
         return None
 
     buy_price = float(stock.at[buy_date, "open"])
     if not math.isfinite(buy_price) or buy_price <= 0:
+        return None
+
+    # Evaluate only the consecutive market data currently available, capped at
+    # the model horizon. A future/missing day stops evaluation without shifting
+    # the intended execution date.
+    available_end_pos = min(last_pos, len(trading_dates) - 1)
+    evaluated_end_pos = buy_pos - 1
+    for pos in range(buy_pos, available_end_pos + 1):
+        date = trading_dates[pos]
+        if date not in stock.index:
+            break
+        prices = stock.loc[date, ["open", "high", "close"]]
+        if prices.isna().any():
+            break
+        if not np.isfinite(prices.to_numpy(dtype=float)).all():
+            break
+        if pd.isna(benchmark_returns.get(date, np.nan)):
+            break
+        evaluated_end_pos = pos
+
+    if evaluated_end_pos < buy_pos:
         return None
 
     def bench_ret_at(pos: int) -> float:
@@ -316,9 +364,25 @@ def calculate_result(
             "ret_ew": adj_ret,
             "buy": buy_price,
             "sell": sell_price,
-            # Matches generate_targets.py: T+1 -> T+2 is one holding day.
-            "holding_days": exit_pos - buy_pos,
+            # Inclusive of both the buy date and the sell date.
+            "holding_days": exit_pos - buy_pos + 1,
             "exit_reason": exit_reason,
+            "csi1500_ew": bench_ret,
+        }
+
+    def open_position_mark(mark_pos: int) -> dict[str, Any] | None:
+        """Mark an unsold position using the latest available close."""
+        mark_date = trading_dates[mark_pos]
+        close_price = float(stock.at[mark_date, "close"])
+        raw_ret, adj_ret = adjusted_return(close_price, mark_pos)
+        bench_ret = bench_ret_at(mark_pos)
+        if not all(math.isfinite(x) for x in (close_price, raw_ret, adj_ret, bench_ret)):
+            return None
+        return {
+            "ret": raw_ret,
+            "ret_ew": adj_ret,
+            "buy": buy_price,
+            "holding_days": mark_pos - buy_pos + 1,
             "csi1500_ew": bench_ret,
         }
 
@@ -329,11 +393,9 @@ def calculate_result(
         return None
     if t1_close_adj <= cut + EPS:
         sell_pos = buy_pos + 1
-        if sell_pos > last_pos or sell_pos >= len(trading_dates):
-            return None
+        if sell_pos > last_pos or sell_pos > evaluated_end_pos:
+            return open_position_mark(evaluated_end_pos)
         sell_date = trading_dates[sell_pos]
-        if sell_date not in stock.index or pd.isna(stock.at[sell_date, "open"]):
-            return None
         return result(
             target=0,
             sell_price=float(stock.at[sell_date, "open"]),
@@ -352,7 +414,7 @@ def calculate_result(
         )
 
     # Normal checks from T+2 through T+H.
-    for pos in range(buy_pos + 1, last_pos + 1):
+    for pos in range(buy_pos + 1, evaluated_end_pos + 1):
         date = trading_dates[pos]
         open_price = float(stock.at[date, "open"])
         high_price = float(stock.at[date, "high"])
@@ -404,7 +466,7 @@ def calculate_result(
                 exit_reason="expiry_gain" if expiry_target == 1 else "expiry_close",
             )
 
-    return None
+    return open_position_mark(evaluated_end_pos)
 
 
 def safe_write_csv(df: pd.DataFrame, out_path: Path, encoding: str) -> None:
@@ -427,7 +489,7 @@ def main() -> None:
     signals = pd.read_csv(args.signals, encoding=args.encoding, low_memory=False)
     signals = ensure_output_columns(signals)
 
-    required_signal_cols = ["ts_code", args.signal_date_col, "horizon", "gain", "cut", "target"]
+    required_signal_cols = ["model", "ts_code", args.signal_date_col, "target"]
     missing = [c for c in required_signal_cols if c not in signals.columns]
     if missing:
         raise ValueError(
@@ -466,22 +528,31 @@ def main() -> None:
     stock_cache: dict[str, pd.DataFrame | None] = {}
 
     filled = 0
+    open_updated = 0
     unresolved = 0
     missing_stock_files: set[str] = set()
     errors: list[str] = []
+    model_parameters: dict[str, tuple[int, float, float]] = {}
 
     for count, idx in enumerate(pending_indices, start=1):
         ts_code = str(signals.at[idx, "ts_code"]).strip()
+        model_name = str(signals.at[idx, "model"]).strip()
         signal_date = signal_dates.at[idx]
 
-        if not ts_code or ts_code.lower() == "nan" or pd.isna(signal_date):
+        if (
+            not ts_code
+            or ts_code.lower() == "nan"
+            or not model_name
+            or model_name.lower() == "nan"
+            or pd.isna(signal_date)
+        ):
             unresolved += 1
             continue
 
         try:
-            horizon = int(to_finite_float(signals.at[idx, "horizon"], "horizon"))
-            gain = to_finite_float(signals.at[idx, "gain"], "gain")
-            cut = to_finite_float(signals.at[idx, "cut"], "cut")
+            if model_name not in model_parameters:
+                model_parameters[model_name] = get_model_parameters(model_name)
+            horizon, gain, cut = model_parameters[model_name]
 
             if ts_code not in stock_cache:
                 stock_path = find_stock_file(args.stock_dir, ts_code)
@@ -519,16 +590,22 @@ def main() -> None:
 
             for col, value in row_result.items():
                 signals.at[idx, col] = value
-            filled += 1
+            if "target" in row_result:
+                filled += 1
+            else:
+                open_updated += 1
 
         except Exception as exc:  # Continue other signals and report bad rows.
             unresolved += 1
-            errors.append(f"row={idx}, ts_code={ts_code}, error={exc}")
+            errors.append(
+                f"row={idx}, model={model_name}, ts_code={ts_code}, error={exc}"
+            )
 
         if count % 500 == 0:
             print(
                 f"[progress] checked={count}/{len(pending_indices)} "
-                f"filled={filled} unresolved={unresolved}",
+                f"sold={filled} open_updated={open_updated} "
+                f"unresolved={unresolved}",
                 flush=True,
             )
 
@@ -537,7 +614,10 @@ def main() -> None:
 
     print(f"[benchmark] return_column={benchmark_col}")
     print(f"[rows] total={len(signals)} already_filled={int((~pending_mask).sum())}")
-    print(f"[result] newly_filled={filled} unresolved={unresolved}")
+    print(
+        f"[result] newly_sold={filled} open_updated={open_updated} "
+        f"unresolved={unresolved}"
+    )
     print(f"[write] {out_path}")
 
     if missing_stock_files:
