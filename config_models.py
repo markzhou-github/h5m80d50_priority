@@ -6,6 +6,7 @@ MODEL_CONFIGS = {
         "priority_name_column": "priority_name",
         "priority_mapping": {
             "P1": 1,
+            "P1A_current_consensus": 1, 
             "P1B_low_turnover_exception": 1, 
             "P2_current_broader": 2,
             "avg_top1|avg_top3": 2,
@@ -26,6 +27,8 @@ MODEL_CONFIGS = {
             "strong_only": 2,
             "strict_only": 3,
             "layer2_m1_only": 5,
+            "layer2_m1_m3_overlap": 5, 
+            "layer2_m3_only": 5, 
         },
         "horizon": 2,
         "gain": 8.0,
