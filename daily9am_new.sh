@@ -85,7 +85,7 @@ python h5m80d50_neural_top5/generate_signals.py \
   --out-dir signals_h5neural \
   --save-ranked
 
-# python notify_daily.py
+python notify_daily.py
 
 
 run_step "prepare_training_v5b.py" \
