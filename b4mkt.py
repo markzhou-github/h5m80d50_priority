@@ -12,7 +12,8 @@ The program:
   6. on T+2 morning only, checks the stock's T+1 close. If the T+1 adjusted
      close already breached the stop threshold, cut_price is set to -1,
      meaning "sell at today's open";
-  7. prints a compact CSV-like message. No output file is written.
+  7. reports expire = horizon - holding_days, using holding_days from the signal/target file;
+  8. prints a compact CSV-like message. No output file is written.
 
 Price formulas:
     gain_price = buy * (1 + csi1500_ew + gain / 100)
@@ -47,6 +48,7 @@ REQUIRED_SIGNAL_COLUMNS = {
     "buy",
     "sell",
     "csi1500_ew",
+    "holding_days",
 }
 
 
@@ -272,9 +274,9 @@ def calculate_one_position(
 
     config = MODEL_CONFIGS[model]
 
-    if "gain" not in config or "cut" not in config:
+    if "gain" not in config or "cut" not in config or "horizon" not in config:
         raise ValueError(
-            f"MODEL_CONFIGS[{model!r}] must contain both 'gain' and 'cut'."
+            f"MODEL_CONFIGS[{model!r}] must contain 'horizon', 'gain', and 'cut'."
         )
 
     buy = pd.to_numeric(row["buy"], errors="coerce")
@@ -290,10 +292,20 @@ def calculate_one_position(
 
     buy = float(buy)
     ew = float(ew)
+    horizon = int(config["horizon"])
     gain = float(config["gain"]) / 100.0
     cut = float(config["cut"]) / 100.0
 
     current_day, trade_days = position_trade_day(signal_date, today)
+
+    holding_days = pd.to_numeric(row["holding_days"], errors="coerce")
+    if pd.isna(holding_days):
+        raise ValueError(
+            f"Missing holding_days for active position {model} {ts_code} {signal_date}."
+        )
+
+    holding_days = int(holding_days)
+    expire = horizon - holding_days
 
     if current_day < 2:
         # The row has a buy price, but on T+1 there is no normal sell action under
@@ -337,6 +349,8 @@ def calculate_one_position(
         "buy": buy,
         "gain_price": gain_price,
         "cut_price": cut_price,
+        "holding_days": holding_days,
+        "expire": expire,
         "current_day": current_day,
         "t1_stop_triggered": t1_stop_triggered,
     }
@@ -348,7 +362,7 @@ def calculate_one_position(
 
 
 def build_message(results: list[dict], decimals: int) -> str:
-    header = "model,ts_code,signal_date,priority,buy,gain_price,cut_price"
+    header = "model,ts_code,signal_date,priority,buy,gain_price,cut_price,expire"
     lines = [header]
 
     for item in results:
@@ -362,6 +376,7 @@ def build_message(results: list[dict], decimals: int) -> str:
                     format_value(item["buy"], decimals),
                     format_value(item["gain_price"], decimals),
                     "-1" if item["cut_price"] == -1 else format_value(item["cut_price"], decimals),
+                    str(item["expire"]),
                 ]
             )
         )

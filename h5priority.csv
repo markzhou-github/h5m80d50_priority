@@ -1,4 +1,10 @@
 model,ts_code,trade_date,priority_name,priority,target
+h5m80d50_priority,300142.SZ,20260820,P2_current_broader,2.0,
+h5m80d50_priority,688185.SH,20260820,P1A_current_consensus,1.0,
+h5m80d50_priority,688658.SH,20260820,P2_current_broader,2.0,
+h5m80d50_priority,600403.SH,20260819,P3_global_china_expansion,3.0,
+h5m80d50_priority,600783.SH,20260819,P3_global_china_expansion,3.0,
+h5m80d50_priority,688347.SH,20260819,P2_current_broader,2.0,
 h5m80d50_priority,600353.SH,20260818,,,
 h5m80d50_priority,603678.SH,20260818,,,
 h5m80d50_priority,605376.SH,20260818,,,
