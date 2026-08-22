@@ -3,7 +3,7 @@
 """Before-market sell-price suggestions for currently held signal positions.
 
 The program:
-  1. reads a signal/target CSV or Parquet file;
+  1. reads one signal/target CSV or Parquet file per selected model;
   2. keeps rows that have already been bought (buy is filled) but not sold
      (sell is empty);
   3. uses MODEL_CONFIGS for the model-specific gain/cut thresholds;
@@ -13,7 +13,7 @@ The program:
      close already breached the stop threshold, cut_price is set to -1,
      meaning "sell at today's open";
   7. reports expire = horizon - holding_days, using holding_days from the signal/target file;
-  8. prints a compact CSV-like message. No output file is written.
+  8. combines all selected models into one phone-friendly Bark message.
 
 Price formulas:
     gain_price = buy * (1 + csi1500_ew + gain / 100)
@@ -28,8 +28,11 @@ Today's unknown CSI1500-EW movement is intentionally out of scope.
 from __future__ import annotations
 
 import argparse
+import json
 from pathlib import Path
 from typing import Optional
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import pandas as pd
 
@@ -39,6 +42,17 @@ from config_models import MODEL_CONFIGS
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 DEFAULT_STKFACTOR_DIR = PROJECT_ROOT / "processed" / "daily" / "stkfactor"
+
+BARK_USERS = {
+    "mark": "Eqx2dpLcNQdceTffBdXNuL",
+    "tim": "QtuPcWU5CBu4Fd8CEewcpW",
+    "lmz": "ZmvgRRVm7Ph672J4CujQKj",
+    "minw": "4JjveStyeFjyMQx3wNacRa",
+    "ling": "aCSM6bF4yqMqX88XNWsrZB",
+    "tracy": "dtXHZsVTen6KprpRg23Qc8",
+    "ashley": "cZ7Uwam2ehXRGVaW6Pb8Kh",
+    "minzy": "2YX6JE8tAyY3uTdFqcWPag",
+}
 
 REQUIRED_SIGNAL_COLUMNS = {
     "model",
@@ -66,12 +80,27 @@ def parse_args() -> argparse.Namespace:
     )
 
     parser.add_argument(
+        "--models",
+        nargs="+",
+        choices=sorted(MODEL_CONFIGS),
+        default=None,
+        help=(
+            "Models to process. Accepts multiple model names. "
+            "Default: all models in MODEL_CONFIGS."
+        ),
+    )
+
+    parser.add_argument(
         "--signal-file",
         "--signal_file",
         dest="signal_file",
         type=Path,
-        required=True,
-        help="Signal/target CSV or Parquet file.",
+        default=None,
+        help=(
+            "Optional signal/target file override. If omitted, each model uses "
+            "MODEL_CONFIGS[model]['signal_file']. If supplied, the same override "
+            "file is used for every selected model and rows are filtered by model."
+        ),
     )
 
     parser.add_argument(
@@ -102,12 +131,51 @@ def parse_args() -> argparse.Namespace:
         help="Number of decimals used when printing prices. Default: 3.",
     )
 
+    parser.add_argument(
+        "--users",
+        nargs="+",
+        choices=sorted(BARK_USERS),
+        default=["mark"],
+        help="Bark recipients. Default: mark.",
+    )
+
+    parser.add_argument(
+        "--no-bark",
+        action="store_true",
+        help="Print the message only; do not send Bark notifications.",
+    )
+
     return parser.parse_args()
 
 
 # =============================================================================
 # BASIC HELPERS
 # =============================================================================
+
+
+def resolve_signal_file(model_name: str, override: Optional[Path]) -> Path:
+    """Resolve one model's signal/target file.
+
+    Priority:
+      1. --signal-file override, if provided;
+      2. MODEL_CONFIGS[model_name]["signal_file"].
+
+    Relative paths are resolved against PROJECT_ROOT.
+    """
+    if override is not None:
+        path = override.expanduser()
+    else:
+        config = MODEL_CONFIGS[model_name]
+        if "signal_file" not in config:
+            raise ValueError(
+                f"MODEL_CONFIGS[{model_name!r}] is missing 'signal_file'."
+            )
+        path = Path(config["signal_file"]).expanduser()
+
+    if not path.is_absolute():
+        path = PROJECT_ROOT / path
+
+    return path.resolve()
 
 
 def read_signal_file(path: Path) -> pd.DataFrame:
@@ -362,26 +430,86 @@ def calculate_one_position(
 
 
 def build_message(results: list[dict], decimals: int) -> str:
-    header = "model,ts_code,signal_date,priority,buy,gain_price,cut_price,expire"
-    lines = [header]
+    """Build a compact phone-friendly Bark message, grouped by model."""
+    if not results:
+        return "No sell instructions for today."
+
+    lines: list[str] = []
+    current_model: str | None = None
 
     for item in results:
+        model = item["model"]
+        if model != current_model:
+            if lines:
+                lines.append("")
+            lines.append(f"【{model}】")
+            current_model = model
+
+        priority = format_priority(item["priority"])
+        expire = int(item["expire"])
+        expire_text = "⚠️ EXPIRE TODAY" if expire <= 0 else f"Exp {expire}"
+        cut_text = (
+            "OPEN"
+            if item["cut_price"] == -1
+            else format_value(item["cut_price"], decimals)
+        )
+
         lines.append(
-            ",".join(
-                [
-                    item["model"],
-                    item["ts_code"],
-                    item["signal_date"],
-                    format_priority(item["priority"]),
-                    format_value(item["buy"], decimals),
-                    format_value(item["gain_price"], decimals),
-                    "-1" if item["cut_price"] == -1 else format_value(item["cut_price"], decimals),
-                    str(item["expire"]),
-                ]
-            )
+            f"{item['ts_code']} | P{priority} | {expire_text}"
+            if priority
+            else f"{item['ts_code']} | {expire_text}"
+        )
+        lines.append(
+            f"Buy {format_value(item['buy'], decimals)} | "
+            f"↑ {format_value(item['gain_price'], decimals)} | "
+            f"↓ {cut_text}"
         )
 
     return "\n".join(lines)
+
+
+def notify_bark(
+    users: list[str],
+    title: str,
+    body: str,
+    *,
+    group: str = "b4mkt",
+    timeout: float = 10.0,
+) -> None:
+    """Send one Bark push to each requested user via api.day.app."""
+    for user in users:
+        key = BARK_USERS[user]
+        payload = {
+            "title": title,
+            "body": body,
+            "group": group,
+            "device_key": key,
+        }
+        data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
+        request = Request(
+            "https://api.day.app/push",
+            data=data,
+            headers={"Content-Type": "application/json; charset=utf-8"},
+            method="POST",
+        )
+
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                response_body = response.read().decode("utf-8", errors="replace")
+            try:
+                result = json.loads(response_body)
+            except json.JSONDecodeError:
+                result = {}
+
+            if result.get("code") not in (None, 200):
+                raise RuntimeError(
+                    f"Bark returned code={result.get('code')}: {result.get('message', response_body)}"
+                )
+
+            print(f"[bark] sent to {user}")
+
+        except (HTTPError, URLError, TimeoutError, RuntimeError) as exc:
+            print(f"[bark] FAILED for {user}: {exc}")
 
 
 # =============================================================================
@@ -395,7 +523,11 @@ def main() -> None:
     if args.decimals < 0:
         raise ValueError("--decimals must be >= 0")
 
-    today = normalize_trade_date(args.today) if args.today else normalize_trade_date(End_date_global)
+    today = (
+        normalize_trade_date(args.today)
+        if args.today
+        else normalize_trade_date(End_date_global)
+    )
 
     # b4mkt is intended for a trading-day morning. If today is not a trading
     # date, there are no market sell instructions to send.
@@ -403,62 +535,108 @@ def main() -> None:
         print(f"[b4mkt] {today} is not an A-share trading day. Nothing to do.")
         return
 
-    signal_data = read_signal_file(args.signal_file)
-    signal_data.columns = signal_data.columns.str.strip()
-
-    missing = REQUIRED_SIGNAL_COLUMNS - set(signal_data.columns)
-    if missing:
-        raise ValueError(
-            f"Signal file is missing required columns: {sorted(missing)}"
-        )
-
-    # Only positions that are already bought and not yet sold.
-    active = signal_data.loc[
-        signal_data["buy"].notna()
-        & pd.to_numeric(signal_data["buy"], errors="coerce").notna()
-        & signal_data["sell"].isna()
-    ].copy()
-
-    if active.empty:
-        print("[b4mkt] No bought-but-unsold positions.")
-        return
+    selected_models = args.models if args.models is not None else list(MODEL_CONFIGS)
 
     results: list[dict] = []
     skipped: list[dict] = []
     errors: list[str] = []
 
-    for _, row in active.iterrows():
+    for model_name in selected_models:
         try:
-            item = calculate_one_position(
-                row=row,
-                today=today,
-                stkfactor_dir=args.stkfactor_dir,
+            signal_file = resolve_signal_file(model_name, args.signal_file)
+            signal_data = read_signal_file(signal_file)
+            signal_data.columns = signal_data.columns.str.strip()
+
+            missing = REQUIRED_SIGNAL_COLUMNS - set(signal_data.columns)
+            if missing:
+                raise ValueError(
+                    f"Signal file {signal_file} is missing required columns: "
+                    f"{sorted(missing)}"
+                )
+
+            # A configured file may contain one model or many. Always filter to
+            # the model currently being processed so multiple model files cannot
+            # interfere with one another.
+            model_series = signal_data["model"].astype("string").str.strip()
+            model_data = signal_data.loc[model_series == model_name].copy()
+
+            if model_data.empty:
+                print(
+                    f"[b4mkt] model={model_name}: no rows in {signal_file.name}."
+                )
+                continue
+
+            # Only positions that are already bought and not yet sold.
+            active = model_data.loc[
+                model_data["buy"].notna()
+                & pd.to_numeric(model_data["buy"], errors="coerce").notna()
+                & model_data["sell"].isna()
+            ].copy()
+
+            if active.empty:
+                print(
+                    f"[b4mkt] model={model_name}: no bought-but-unsold positions."
+                )
+                continue
+
+            print(
+                f"[b4mkt] model={model_name} file={signal_file} "
+                f"active={len(active)}"
             )
 
-            if item.get("skip"):
-                skipped.append(item)
-            else:
-                results.append(item)
+            for _, row in active.iterrows():
+                try:
+                    item = calculate_one_position(
+                        row=row,
+                        today=today,
+                        stkfactor_dir=args.stkfactor_dir,
+                    )
 
-        except Exception as exc:  # keep other positions usable if one row is bad
-            model = str(row.get("model", ""))
-            ts_code = str(row.get("ts_code", ""))
-            trade_date = str(row.get("trade_date", ""))
-            errors.append(
-                f"{model},{ts_code},{trade_date}: {exc}"
-            )
+                    if item.get("skip"):
+                        skipped.append(item)
+                    else:
+                        results.append(item)
 
-    # Stable, useful notification ordering: higher priority first, then signal date.
+                except Exception as exc:  # keep other positions usable
+                    model = str(row.get("model", ""))
+                    ts_code = str(row.get("ts_code", ""))
+                    trade_date = str(row.get("trade_date", ""))
+                    errors.append(
+                        f"{model},{ts_code},{trade_date}: {exc}"
+                    )
+
+        except Exception as exc:
+            errors.append(f"model={model_name}: {exc}")
+
+    # Group by model in the message, then priority, signal date, and stock code.
+    model_order = {name: i for i, name in enumerate(selected_models)}
+
     def sort_key(item: dict):
         p = pd.to_numeric(item.get("priority"), errors="coerce")
         p_key = float(p) if pd.notna(p) else float("inf")
-        return (p_key, item["signal_date"], item["model"], item["ts_code"])
+        return (
+            model_order.get(item["model"], len(model_order)),
+            p_key,
+            item["signal_date"],
+            item["ts_code"],
+        )
 
     results.sort(key=sort_key)
 
     if results:
         msg = build_message(results, decimals=args.decimals)
+        title = f"B4MKT {today}"
+        print()
+        print(title)
+        print()
         print(msg)
+
+        if not args.no_bark:
+            notify_bark(
+                users=args.users,
+                title=title,
+                body=msg,
+            )
     else:
         print("[b4mkt] No sell instructions for today.")
 

@@ -1,5 +1,6 @@
 MODEL_CONFIGS = {
     "h5m80d50_priority": {
+        "signal_file": "h5priority_target.csv",
         "signal_dir": "signals_h5priority",
         "file_glob": "signals_h5m80d50_priority_*.csv",
         "date_regex": r"^signals_h5m80d50_priority_(\d{8})\.csv$",
@@ -18,6 +19,7 @@ MODEL_CONFIGS = {
         "cut": -5.0,
     },
     "h2m80d50_dual": {
+        "signal_file": "h2dual_target.csv",
         "signal_dir": "signals_h2dual",
         "file_glob": "signals_*.csv",
         "date_regex": r"^signals_(\d{8})\.csv$",
@@ -35,6 +37,7 @@ MODEL_CONFIGS = {
         "cut": -5.0,
     },
     "h5m80d50_ensemble": {
+        "signal_file": "h5ensemble_target.csv",
         "signal_dir": "signals_h5ensemble",
         "file_glob": "signals_*.csv",
         "date_regex": r"^signals_(\d{8})\.csv$",
