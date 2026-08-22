@@ -8,7 +8,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from config_date import End_date
+from config_date import End_date, last_trade_date
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -47,6 +47,20 @@ PIPELINES = {
     },
 }
 
+# if before 9am, then use last trade date of last trade date. if after 9am, then use last trade date
+
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+now = datetime.now(ZoneInfo("Asia/Shanghai"))
+
+last_td = last_trade_date()
+
+if now.hour < 9:
+    default_end_date = last_trade_date(last_td)
+else:
+    default_end_date = last_td
+    
 
 def resolve_path(value: str | Path) -> Path:
     path = Path(value)
@@ -214,10 +228,10 @@ def main() -> None:
     #   missing start-date -> End_date
     #   missing end-date   -> End_date
     start_date = normalize_date(
-        args.start_date if args.start_date is not None else End_date
+        args.start_date if args.start_date is not None else default_end_date
     )
     end_date = normalize_date(
-        args.end_date if args.end_date is not None else End_date
+        args.end_date if args.end_date is not None else default_end_date
     )
 
     if start_date > end_date:

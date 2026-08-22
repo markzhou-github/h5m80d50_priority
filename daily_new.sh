@@ -74,8 +74,32 @@ run_step "merge_csi1500_daily_polars.py, incomplete only for custom index" \
 run_step "build_csi1500_custom_index.py" \
     python build_csi1500_custom_index.py
     
+echo "It's $(date +%H:%M), running now..."
 echo python 01_upday_minute_buckets_and_features.py
 python 01_upday_minute_buckets_and_features.py \
   --lookback-trade-days 30 \
   --source-start-date 20250801 \
   --download-workers 4
+
+# Detect OS and calculate seconds until 9am
+now=$(date +%s)
+
+if [[ "$(uname)" == "Darwin" ]]; then
+    # macOS
+    target=$(date -j -f "%H:%M:%S" "08:00:00" +%s)
+else
+    # Linux
+    target=$(date -d "today 08:00:00" +%s)
+fi
+
+# If 8am already passed today, skip the wait
+if [[ "$now" -lt "$target" ]]; then
+    wait_seconds=$(( target - now ))
+    echo "Waiting until 9am... (sleeping for $wait_seconds seconds)"
+    sleep "$wait_seconds"
+fi
+
+echo "It's $(date +%H:%M), running aft_mkt.py"
+python aft_mkt.py
+
+python b4mkt_bark_models.py

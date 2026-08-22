@@ -10,12 +10,26 @@ mkdir -p "$LOG_DIR"
 
 echo "Script started. Waiting until 9:00 AM..."
 
-# Loop until the current time matches 09:00
-while [[ "$(date +%H:%M)" != "09:00" ]]; do
-    sleep 1
-done
+# Detect OS and calculate seconds until 9am
+now=$(date +%s)
 
-echo "It is 9:00 AM. Executing command..."
+if [[ "$(uname)" == "Darwin" ]]; then
+    # macOS
+    target=$(date -j -f "%H:%M:%S" "09:00:00" +%s)
+else
+    # Linux
+    target=$(date -d "today 09:00:00" +%s)
+fi
+
+# If 9am already passed today, skip the wait
+if [[ "$now" -lt "$target" ]]; then
+    wait_seconds=$(( target - now ))
+    echo "Waiting until 9am... (sleeping for $wait_seconds seconds)"
+    sleep "$wait_seconds"
+fi
+
+# --- Your code below runs at or after 9am, then exits ---
+echo "It's $(date +%H:%M), running now..."
 
 run_step() {
     step_name="$1"
@@ -87,16 +101,18 @@ python h5m80d50_neural_top5/generate_signals.py \
 
 python notify_daily.py
 
+python b4mkt_bark_models.py
 
-run_step "prepare_training_v5b.py" \
-    python prepare_training_v5b.py   --merge-mode memory   --workers 8   --output-dir processed/train_v5b_0715  \
-    --minute-feature-dir processed/minute_features_v5b/by_stock   --clean
 
-run_step "h5m80d50 signals" \
-    python h5m80d50_priority/signal_h5m80d50.py   --input processed/train_v5b_0715/train_v5b.parquet    --out-dir signals_0715
+#run_step "prepare_training_v5b.py" \
+#    python prepare_training_v5b.py   --merge-mode memory   --workers 8   --output-dir processed/train_v5b_0715  \
+#    --minute-feature-dir processed/minute_features_v5b/by_stock   --clean
 
-run_step "h2m80d50 signals" \
-    python h2m80d50_dual/signal_h2m80d50.py   --input processed/train_v5b_0715/train_v5b.parquet    --out-dir signals_0715
+#run_step "h5m80d50 signals" \
+#    python h5m80d50_priority/signal_h5m80d50.py   --input processed/train_v5b_0715/train_v5b.parquet    --out-dir #signals_0715
+
+#run_step "h2m80d50 signals" \
+#    python h2m80d50_dual/signal_h2m80d50.py   --input processed/train_v5b_0715/train_v5b.parquet    --out-dir signals_0715
 
 
 
