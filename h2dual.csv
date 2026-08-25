@@ -1,4 +1,10 @@
 model,ts_code,trade_date,priority_name,priority,target
+h2m80d50_dual,002081.SZ,20260821,overlap_core,1,
+h2m80d50_dual,002536.SZ,20260821,strict_only,3,
+h2m80d50_dual,301047.SZ,20260821,overlap_core,1,
+h2m80d50_dual,688432.SH,20260821,strict_only,3,
+h2m80d50_dual,688596.SH,20260821,strict_only,3,
+h2m80d50_dual,688766.SH,20260821,strict_only,3,
 h2m80d50_dual,300363.SZ,20260820,strict_only,3,
 h2m80d50_dual,301047.SZ,20260820,overlap_core,1,
 h2m80d50_dual,600353.SH,20260820,overlap_core,1,
