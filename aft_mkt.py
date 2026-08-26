@@ -45,6 +45,14 @@ PIPELINES = {
         "audit_file": "h5ensemble.csv",
         "target_file": "h5ensemble_target.csv",
     },
+    "h5m80d50_direction": {
+        # Change these two paths if your actual locations differ.
+        "generate_script": "h5m80d50_direction/generate_signals_range.py",
+        "input": "processed/train_v5b/train_v5b.parquet",
+        "signal_dir": "signals_h5direction",
+        "audit_file": "h5direction.csv",
+        "target_file": "h5direction_target.csv",
+    },
 }
 
 # if before 9am, then use last trade date of last trade date. if after 9am, then use last trade date
