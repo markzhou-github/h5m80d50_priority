@@ -150,6 +150,7 @@ trade_date = args.trade_date
 priority_path = "signals_h5priority/signals_h5m80d50_priority_" + trade_date + ".csv"
 dual_path= "signals_h2dual/signals_"+ trade_date +".csv"
 ensemble_path= "signals_h5ensemble/signals_" + trade_date + ".csv"
+direction_path = "signals_h5direction/signals_" + trade_date + ".csv"
 
 
 match_strings = [
@@ -188,6 +189,12 @@ ensemble_map = {
     "FAMILY_ONLY": 3,
 }
 
+direction_map = {
+    "H5_COMPETING_DIRECTION_TOP3": 1, 
+
+}
+
+
 def get_signals(sigfile: str, col1: str, col2: str, valmap: dict )-> str:
     df = pd.read_csv(sigfile, usecols=[col1, col2])
 
@@ -199,6 +206,7 @@ def get_signals(sigfile: str, col1: str, col2: str, valmap: dict )-> str:
 priority_signals = get_signals(priority_path, 'ts_code', 'priority', priority_map )
 dual_signals = get_signals(dual_path, 'ts_code', 'signal_priority', dual_map )
 ensemble_signals = get_signals(ensemble_path, 'ts_code', 'signal_tag', ensemble_map)
+direction_signals = get_signals(direction_path, 'ts_code', 'signal_tag', direction_map)
 
 priority_signals.columns = ['ts_code', 'priority']
 priority_signals[['model', 'horizon', 'gain', 'cut']] = ['priority', 5, 0.08, -0.05]
@@ -206,10 +214,13 @@ priority_signals[['model', 'horizon', 'gain', 'cut']] = ['priority', 5, 0.08, -0
 ensemble_signals.columns = ['ts_code', 'priority']
 ensemble_signals[['model', 'horizon', 'gain', 'cut']] = ['ensemble', 5, 0.08, -0.05]
 
+direction_signals.columns = ['ts_code', 'priority']
+direction_signals[['model', 'horizon', 'gain', 'cut']] = ['ensemble', 5, 0.08, -0.05]
+
 dual_signals.columns = ['ts_code', 'priority']
 dual_signals[['model', 'horizon', 'gain', 'cut']] = ['dual', 2, 0.08, -0.05]
 
-today_signals = pd.concat([priority_signals, ensemble_signals, dual_signals], ignore_index=True)
+today_signals = pd.concat([priority_signals, ensemble_signals, dual_signals, direction+_signals], ignore_index=True)
 today_signals_csv = today_signals.to_csv(index=False)
 
 print(today_signals)
@@ -218,22 +229,27 @@ print(priority_signals)
 priority_signals_csv = priority_signals[['ts_code', 'priority']].to_csv(index=False)
 ensemble_signals_csv = ensemble_signals[['ts_code', 'priority']].to_csv(index=False)
 dual_signals_csv = dual_signals[['ts_code', 'priority']].to_csv(index=False)
+direction_signals_csv = direction_signals[['ts_code', 'priority']].to_csv(index=False)
 
 notify_daily(user='mark', title= trade_date +'_H5', msg="股票代码， 优先级\n"+priority_signals_csv) 
 notify_daily(user='mark', title= trade_date +'_H2', msg="股票代码， 优先级\n"+dual_signals_csv) 
 notify_daily(user='mark', title= trade_date +'_H5', msg="股票代码， 优先级\n"+ensemble_signals_csv) 
+notify_daily(user='mark', title= trade_date +'_H5', msg="股票代码， 优先级\n"+direction_signals_csv) 
 
 notify_daily(user='minw', title= trade_date +'_H5', msg="股票代码， 优先级\n"+priority_signals_csv) 
 notify_daily(user='minw', title= trade_date +'_H2', msg="股票代码， 优先级\n"+dual_signals_csv) 
 notify_daily(user='minw', title= trade_date +'_H5', msg="股票代码， 优先级\n"+ensemble_signals_csv) 
+notify_daily(user='minw', title= trade_date +'_H5', msg="股票代码， 优先级\n"+direction_signals_csv) 
 
 notify_daily(user='lmz', title= trade_date +'_H5', msg="股票代码， 优先级\n"+priority_signals_csv) 
 notify_daily(user='lmz', title= trade_date +'_H2', msg="股票代码， 优先级\n"+dual_signals_csv) 
 notify_daily(user='lmz', title= trade_date +'_H5', msg="股票代码， 优先级\n"+ensemble_signals_csv) 
+notify_daily(user='lmz', title= trade_date +'_H5', msg="股票代码， 优先级\n"+direction_signals_csv) 
 
 notify_daily(user='ling', title= trade_date +'_H5', msg="股票代码， 优先级\n"+priority_signals_csv) 
 notify_daily(user='ling', title= trade_date +'_H2', msg="股票代码， 优先级\n"+dual_signals_csv) 
 notify_daily(user='ling', title= trade_date +'_H5', msg="股票代码， 优先级\n"+ensemble_signals_csv) 
+notify_daily(user='ling', title= trade_date +'_H5', msg="股票代码， 优先级\n"+direction_signals_csv)
 
 priority_rows = [row for row in priority_signals_csv.split('\n') if row]
 dual_rows = [row for row in dual_signals_csv.split('\n') if row]
@@ -244,9 +260,14 @@ dual_msg = trade_date + ',H2M80D50\n' + dual_signals_csv
 ensemble_rows = [row for row in ensemble_signals_csv.split('\n') if row]
 ensemble_msg = trade_date + ',H5M80D50\n' + ensemble_signals_csv
 
+direction_rows = [row for row in direction_signals_csv.split('\n') if row]
+direction_msg = trade_date + ',H5M80D50\n' + direction_signals_csv
+
 print('priority:\n', priority_msg)
 print('dual:\n', dual_msg)
+print('direction:\n', direction_msg)
 print('ensemble:\n', ensemble_msg)
+
 
 send_msg = ''
 
@@ -256,5 +277,7 @@ if dual_signals_csv:
     send_msg = send_msg + dual_msg
 if ensemble_signals_csv: 
     send_msg = send_msg + ensemble_msg
+if direction_signals_csv: 
+    send_msg = send_msg + direction_msg
 
 msg_to_server(today_signals_csv)

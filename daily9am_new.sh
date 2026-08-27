@@ -94,10 +94,8 @@ run_step "h2m80d50 signals" \
 run_step "h2m80d50 signals" \
     python h5m80d50_ensemble/signal_h5ensemble.py   --input processed/train_v5b/train_v5b.parquet    --out-dir signals_h5ensemble
 
-python h5m80d50_neural_top5/generate_signals.py \
-  --input processed/train_v5b/train_v5b.parquet \
-  --out-dir signals_h5neural \
-  --save-ranked
+python h5m80d50_direction/generate_signals.py --input processed/train_v5b/train_v5b.parquet --out-dir signals_h5direction
+
 
 python notify_daily.py
 
