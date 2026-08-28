@@ -220,7 +220,7 @@ direction_signals[['model', 'horizon', 'gain', 'cut']] = ['ensemble', 5, 0.08, -
 dual_signals.columns = ['ts_code', 'priority']
 dual_signals[['model', 'horizon', 'gain', 'cut']] = ['dual', 2, 0.08, -0.05]
 
-today_signals = pd.concat([priority_signals, ensemble_signals, dual_signals, direction+_signals], ignore_index=True)
+today_signals = pd.concat([priority_signals, ensemble_signals, dual_signals, direction_signals], ignore_index=True)
 today_signals_csv = today_signals.to_csv(index=False)
 
 print(today_signals)
