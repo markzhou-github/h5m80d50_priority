@@ -66,7 +66,7 @@ run_step "download_1min_upday_all.py" \
     python download_1min_upday_all.py --workers 4 
 
 run_step "build_minute_features_v5b.py" \
-    python build_minute_features_v5b.py  --start-date 20250801 --output-mode by_stock --workers 8 --overwrite
+    python build_minute_features_v5b.py  --start-date 20251001 --output-mode by_stock --workers 8 --overwrite
 
 run_step "merge_csi1500_daily_polars.py, incomplete only for custom index" \
     python merge_csi1500_daily_polars.py
@@ -78,7 +78,7 @@ echo "It's $(date +%H:%M), running now..."
 echo python 01_upday_minute_buckets_and_features.py
 python 01_upday_minute_buckets_and_features.py \
   --lookback-trade-days 30 \
-  --source-start-date 20250801 \
+  --source-start-date 20251001 \
   --download-workers 4
 
 # Detect OS and calculate seconds until 9am
@@ -95,7 +95,7 @@ fi
 # If 8am already passed today, skip the wait
 if [[ "$now" -lt "$target" ]]; then
     wait_seconds=$(( target - now ))
-    echo "Waiting until 9am... (sleeping for $wait_seconds seconds)"
+    echo "Waiting until 8am... (sleeping for $wait_seconds seconds)"
     sleep "$wait_seconds"
 fi
 
