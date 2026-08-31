@@ -8,6 +8,29 @@ ERROR_LOG="${LOG_DIR}/error_${TODAY}.log"
 
 mkdir -p "$LOG_DIR"
 
+echo "Script started. Waiting until 8:00 AM..."
+
+# Detect OS and calculate seconds until 9am
+now=$(date +%s)
+
+if [[ "$(uname)" == "Darwin" ]]; then
+    # macOS
+    target=$(date -j -f "%H:%M:%S" "08:00:00" +%s)
+else
+    # Linux
+    target=$(date -d "today 0:00:00" +%s)
+fi
+
+# If 9am already passed today, skip the wait
+if [[ "$now" -lt "$target" ]]; then
+    wait_seconds=$(( target - now ))
+    echo "Waiting until 8am... (sleeping for $wait_seconds seconds)"
+    sleep "$wait_seconds"
+fi
+
+python aft_mkt.py 
+
+
 echo "Script started. Waiting until 9:00 AM..."
 
 # Detect OS and calculate seconds until 9am

@@ -63,7 +63,7 @@ run_step "download_csi1500_margin_detail.py" \
     python download_csi1500_margin_detail.py 
 
 run_step "download_1min_upday_all.py" \
-    python download_1min_upday.py --workers 4 --start-upday 20250901
+    python download_1min_upday.py --workers 4 --start-upday 20251001
 
 #run_step "build_minute_features_v5b.py" \
 #    python build_minute_features_v5b.py  --start-date 20250901 --output-mode by_stock --workers 8 --overwrite
@@ -77,6 +77,6 @@ run_step "build_csi1500_custom_index.py" \
 echo python 01_upday_minute_buckets_and_features.py
 python 01_upday_minute_buckets_and_features.py \
   --lookback-trade-days 60 \
-  --source-start-date 20250901 \
+  --source-start-date 20251001 \
   --download-workers 4
 
