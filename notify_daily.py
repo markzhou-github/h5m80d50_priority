@@ -215,7 +215,7 @@ ensemble_signals.columns = ['ts_code', 'priority']
 ensemble_signals[['model', 'horizon', 'gain', 'cut']] = ['ensemble', 5, 0.08, -0.05]
 
 direction_signals.columns = ['ts_code', 'priority']
-direction_signals[['model', 'horizon', 'gain', 'cut']] = ['ensemble', 5, 0.08, -0.05]
+direction_signals[['model', 'horizon', 'gain', 'cut']] = ['direction', 5, 0.08, -0.05]
 
 dual_signals.columns = ['ts_code', 'priority']
 dual_signals[['model', 'horizon', 'gain', 'cut']] = ['dual', 2, 0.08, -0.05]
