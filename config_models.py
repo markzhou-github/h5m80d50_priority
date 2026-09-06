@@ -95,6 +95,24 @@ MODEL_CONFIGS = {
         "gain": 8.0,
         "cut": -5.0,
     },
+    "h3m55d15_dual": {
+        "signal_file": "h3dual_target.csv",
+        "signal_dir": "signals_h2dual",
+        "file_glob": "signals_*.csv",
+        "date_regex": r"^signals_(\d{8})\.csv$",
+        "priority_name_column": "signal_layer",
+        "priority_mapping": {
+            "overlap_core": 1,
+            "strong_only": 2,
+            "strict_only": 3,
+            "layer2_m1_only": 5,
+            "layer2_m1_m3_overlap": 5, 
+            "layer2_m3_only": 5, 
+        },
+        "horizon": 3,
+        "gain": 5.5,
+        "cut": -1.5,
+    },
 }
 
 
