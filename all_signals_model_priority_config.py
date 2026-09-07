@@ -350,6 +350,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
+    print(args.signal_dir)
     process_files(
         audit_file=args.audit_file,
         model_name=args.model_name,

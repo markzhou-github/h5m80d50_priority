@@ -2,65 +2,173 @@ from __future__ import annotations
 
 import argparse
 import json
+import gc
+import time
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import polars as pl
+import pyarrow.parquet as pq
+import lightgbm as lgb
 
-from generate_signals import HERE, predict_family, read_lines
+from generate_signals import HERE, read_lines
 
 
 def normalize_date(value: object) -> str:
     return str(value).replace("-", "")[:8]
 
 
-def read_input_range(
-    path: Path,
-    start_date: str,
-    end_date: str,
-    columns: list[str],
-) -> pd.DataFrame:
-    """Read only required columns and rows in the inclusive date range."""
-    start = normalize_date(start_date)
-    end = normalize_date(end_date)
-    if start > end:
-        raise ValueError(f"start_date {start} is after end_date {end}")
+def read_chunks(path: Path, columns: list[str] | None, batch_rows: int):
+    if path.suffix.lower() == ".parquet":
+        with pq.ParquetFile(path, pre_buffer=False) as pf:
+            for batch in pf.iter_batches(columns=columns, batch_size=batch_rows, use_threads=False):
+                yield batch.to_pandas()
+    elif path.suffix.lower() in {".csv", ".txt"}:
+        with pd.read_csv(path, dtype={"trade_date": str, "ts_code": str},
+                         usecols=columns, chunksize=batch_rows) as chunks:
+            yield from chunks
+    else:
+        raise ValueError(f"Unsupported input file: {path}")
 
-    schema = pl.read_parquet_schema(path)
-    required = ["trade_date", "ts_code", *columns]
-    missing = sorted(set(required) - set(schema.names()))
-    if missing:
-        raise KeyError(f"Input lacks {len(missing)} required columns: {missing[:20]}")
 
-    frame = (
-        pl.scan_parquet(path)
-        .select(required)
-        .with_columns(
-            pl.col("trade_date")
-            .cast(pl.Utf8)
-            .str.replace_all("-", "")
-            .str.slice(0, 8)
-            .alias("trade_date"),
-            pl.col("ts_code").cast(pl.Utf8),
-        )
-        .filter((pl.col("trade_date") >= start) & (pl.col("trade_date") <= end))
-        .collect()
-        .to_pandas()
-    )
+def date_arg(value: str) -> str:
+    value = str(value).replace("-", "")
+    try:
+        pd.to_datetime(value, format="%Y%m%d", errors="raise")
+    except (ValueError, TypeError) as exc:
+        raise argparse.ArgumentTypeError("Use a valid YYYYMMDD date") from exc
+    if len(value) != 8 or not value.isdigit():
+        raise argparse.ArgumentTypeError("Use YYYYMMDD")
+    return value
 
-    if frame.empty:
-        raise ValueError(f"No rows for date range {start} ~ {end} in {path}")
-    if frame[["trade_date", "ts_code"]].duplicated().any():
-        examples = frame.loc[
-            frame[["trade_date", "ts_code"]].duplicated(keep=False),
-            ["trade_date", "ts_code"],
-        ].head(10)
-        raise ValueError(
-            "Duplicate trade_date/ts_code rows in requested range:\n"
-            f"{examples.to_string(index=False)}"
-        )
-    return frame
+
+def normalize_dates(values: pd.Series) -> pd.Series:
+    dates = values.astype(str).str.replace("-", "", regex=False).str.slice(0, 8)
+    if not dates.str.fullmatch(r"\d{8}").all():
+        raise ValueError("trade_date must contain non-null YYYYMMDD integers/strings or YYYY-MM-DD strings")
+    return dates
+
+
+def inspect_dates(path: Path, start: str, end: str) -> tuple[list[str], bool]:
+    """Read only the date column in bounded batches; never load the wide panel."""
+    found = set()
+    ordered = True
+    previous = None
+    for chunk in read_chunks(path, ["trade_date"], 65536):
+        values = normalize_dates(chunk["trade_date"])
+        if values.empty:
+            continue
+        ordered = ordered and values.is_monotonic_increasing and (previous is None or previous <= values.iloc[0])
+        previous = values.iloc[-1]
+        found.update(values[values.between(start, end)].unique().tolist())
+    return sorted(found), bool(ordered)
+
+
+def iter_sorted_days(path: Path, columns: list[str] | None, start: str, end: str,
+                     batch_rows: int, max_day_rows: int):
+    """Single wide scan. Complete dates may span read batches and row groups."""
+    active = None
+    pieces = []
+    count = 0
+    for pdf in read_chunks(path, columns, batch_rows):
+        pdf["trade_date"] = normalize_dates(pdf["trade_date"])
+        values = pdf["trade_date"].to_numpy()
+        boundaries = np.r_[0, np.flatnonzero(values[1:] != values[:-1]) + 1, len(values)]
+        for left, right in zip(boundaries[:-1], boundaries[1:]):
+            date = values[left]
+            if active is not None and date != active:
+                ready = pd.concat(pieces, ignore_index=True)
+                pieces = []
+                count = 0
+                yield active, ready
+                del ready
+                active = None
+            if date < start:
+                continue
+            if date > end:
+                return
+            active = date
+            count += right - left
+            if count > max_day_rows:
+                raise ValueError(f"{date}: more than {max_day_rows} rows; inspect duplicates or increase --max-day-rows")
+            # Copy only the fragment so a retained day cannot pin old batches.
+            pieces.append(pdf.iloc[left:right].copy())
+        del pdf
+    if pieces:
+        yield active, pd.concat(pieces, ignore_index=True)
+
+
+def iter_filtered_days(path: Path, columns: list[str] | None, dates: list[str], max_day_rows: int):
+    """Unsorted fallback: one full date at a time; potentially many disk scans."""
+    if path.suffix.lower() in {".csv", ".txt"}:
+        for date in dates:
+            parts = []
+            count = 0
+            for chunk in read_chunks(path, columns, 2048):
+                normalized = normalize_dates(chunk["trade_date"])
+                part = chunk.loc[normalized.eq(date)].copy()
+                if part.empty:
+                    continue
+                part["trade_date"] = date
+                count += len(part)
+                if count > max_day_rows:
+                    raise ValueError(f"{date}: exceeds --max-day-rows")
+                parts.append(part)
+            if parts:
+                yield date, pd.concat(parts, ignore_index=True)
+        return
+    source = pl.scan_parquet(path).select(columns).with_columns(
+        pl.col("trade_date").cast(pl.Utf8).str.replace_all("-", "").str.slice(0, 8))
+    for date in dates:
+        frame = source.filter(pl.col("trade_date") == date).limit(max_day_rows + 1).collect(engine="streaming")
+        if frame.height > max_day_rows:
+            raise ValueError(f"{date}: exceeds --max-day-rows")
+        yield date, frame.to_pandas()
+        del frame
+
+
+def rss_message() -> str:
+    try:
+        import psutil
+        return f"rss={psutil.Process().memory_info().rss / 2**30:.2f}GiB"
+    except ImportError:
+        return "rss=unavailable (optional: install psutil)"
+
+
+def configure_model_cache(max_models: int = 32) -> None:
+    global _load_model
+    previous = globals().get("_load_model")
+    if previous is not None:
+        previous.cache_clear()
+    @lru_cache(maxsize=max_models)
+    def load_model(path: str):
+        return lgb.Booster(model_file=path)
+    _load_model = load_model
+
+
+configure_model_cache()
+
+
+def predict_family(frame: pd.DataFrame, family: str, seeds: list[int]) -> pd.DataFrame:
+    family_dir = HERE / "models" / family
+    features = read_lines(family_dir / "features.txt")
+    x = frame[features].replace([np.inf, -np.inf], np.nan).astype(np.float32)
+    predictions = []
+    for seed in seeds:
+        model_path = family_dir / f"seed{seed}" / "model.txt"
+        if not model_path.exists():
+            raise FileNotFoundError(model_path)
+        model = _load_model(str(model_path.resolve()))
+        if model.feature_name() != features:
+            raise ValueError(f"{family}/seed{seed}: model feature schema differs from features.txt")
+        predictions.append(model.predict(x, num_iteration=model.current_iteration()))
+    matrix = np.column_stack(predictions)
+    return pd.DataFrame({
+        f"{family}_pred": matrix.mean(axis=1), f"{family}_seed_std": matrix.std(axis=1),
+        f"{family}_seed_min": matrix.min(axis=1), f"{family}_seed_max": matrix.max(axis=1),
+    }, index=frame.index)
 
 
 def build_ranked(
@@ -215,7 +323,16 @@ def main() -> None:
         action="store_true",
         help="Save all stocks with scores and ranks for every processed date.",
     )
+    parser.add_argument("--read-batch-rows", type=int, default=2048)
+    parser.add_argument("--max-day-rows", type=int, default=20000)
+    parser.add_argument("--read-mode", choices=["auto", "sorted", "filtered"], default="auto")
+    parser.add_argument("--model-cache-size", type=int, default=32)
     args = parser.parse_args()
+    if args.input.suffix.lower() != ".parquet":
+        parser.error("Input must be a parquet file")
+    if min(args.read_batch_rows, args.max_day_rows) < 1 or args.model_cache_size < 0:
+        parser.error("Read sizes must be positive and model-cache-size nonnegative")
+    configure_model_cache(args.model_cache_size)
 
     cfg = json.loads((HERE / "config.json").read_text(encoding="utf-8"))
     family_features = {
@@ -226,41 +343,51 @@ def main() -> None:
     gate_source = str(policy["gate_source_feature"])
     all_features = sorted(set().union(*family_features.values(), {gate_source}))
 
-    print(f"[load] {args.input} {args.start_date} ~ {args.end_date}")
-    frame = read_input_range(
-        args.input,
-        args.start_date,
-        args.end_date,
-        all_features,
-    )
-    dates = sorted(frame["trade_date"].astype(str).unique().tolist())
-    print(
-        f"[rows] {len(frame)} dates={len(dates)} "
-        f"date_min={dates[0]} date_max={dates[-1]}"
-    )
-
-    ranked, policy = build_ranked(frame, cfg, family_features)
+    start_date = date_arg(args.start_date)
+    end_date = date_arg(args.end_date)
+    if start_date > end_date:
+        raise ValueError("start-date must be <= end-date")
+    required = list(dict.fromkeys(["trade_date", "ts_code", *all_features]))
+    schema = pl.read_parquet_schema(args.input)
+    missing = sorted(set(required) - set(schema.names()))
+    if missing:
+        raise KeyError(f"Input lacks {len(missing)} required columns: {missing[:20]}")
+    print("[inspect] reading date column only", flush=True)
+    dates, ordered = inspect_dates(args.input, start_date, end_date)
+    if not dates:
+        raise ValueError("No rows in requested range")
+    if args.read_mode == "sorted" and not ordered:
+        raise ValueError("Input is not date-sorted; use auto or filtered")
+    mode = "sorted" if ordered and args.read_mode != "filtered" else "filtered"
+    print(f"[plan] dates={len(dates)} features={len(all_features)} reader={mode} "
+          f"model_cache_limit={args.model_cache_size}", flush=True)
+    days = (iter_sorted_days(args.input, required, start_date, end_date,
+                             args.read_batch_rows, args.max_day_rows)
+            if mode == "sorted" else iter_filtered_days(args.input, required, dates, args.max_day_rows))
     args.out_dir.mkdir(parents=True, exist_ok=True)
-
     summaries: list[dict[str, object]] = []
-    for index, date in enumerate(dates, start=1):
-        summary = write_one_date(
-            ranked_range=ranked,
-            date=date,
-            out_dir=args.out_dir,
-            save_ranked=args.save_ranked,
-            policy=policy,
-            gate_source=gate_source,
-        )
+    summary_path = args.out_dir / f"range_generation_summary_{dates[0]}_{dates[-1]}.csv"
+    for index, (date, frame) in enumerate(days, 1):
+        t0=time.perf_counter()
+        frame["trade_date"] = normalize_dates(frame["trade_date"])
+        frame["ts_code"] = frame["ts_code"].astype(str)
+        if frame.duplicated(["trade_date", "ts_code"]).any():
+            raise ValueError(f"Duplicate trade_date/ts_code rows on {date}")
+        ranked, day_policy = build_ranked(frame, cfg, family_features)
+        summary = write_one_date(ranked, date, args.out_dir, args.save_ranked, day_policy, gate_source)
         summaries.append(summary)
-        print(
-            f"[{index}/{len(dates)}] {date} "
-            f"universe={summary['universe_rows']} signals={summary['signal_rows']} "
-            f"production={summary['production_signal_rows']}"
-        )
+        temporary=summary_path.with_suffix(".csv.partial")
+        pd.DataFrame(summaries).to_csv(temporary,index=False,encoding="utf_8_sig")
+        temporary.replace(summary_path)
+        del frame, ranked
+        gc.collect()
+        print(f"[{index}/{len(dates)}] {date} universe={summary['universe_rows']} "
+              f"signals={summary['signal_rows']} production={summary['production_signal_rows']} "
+              f"seconds={time.perf_counter()-t0:.2f} {rss_message()}",flush=True)
+    if [x["trade_date"] for x in summaries] != dates:
+        raise RuntimeError("Written dates differ from preflight; input may have changed")
 
     summary_path = args.out_dir / f"range_generation_summary_{dates[0]}_{dates[-1]}.csv"
-    pd.DataFrame(summaries).to_csv(summary_path, index=False, encoding="utf_8_sig")
     print(f"[SAVE] {summary_path}")
 
 
