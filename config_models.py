@@ -55,26 +55,6 @@ MODEL_CONFIGS = {
         "gain": 8.0,
         "cut": -5.0,
     },
-    
-    "h5m80d50_direction": {
-        "signal_file": "h5direction_target.csv",
-        "signal_dir": "signals_h5direction",
-        "file_glob": "signals_*.csv",
-        "date_regex": r"^signals_(\d{8})\.csv$",
-        "priority_name_column": "signal_tag",
-        "priority_mapping": {
-            "F220_TOP1_LATE_EARLY_GATE": 1,
-            "F220_TOP1_LATE_EARLY_GATE|CONSENSUS_3": 1,
-            "F220_TOP1_LATE_EARLY_GATE|CONSENSUS_2": 1,
-            "F220_TOP1_LATE_EARLY_GATE|FAMILY_ONLY": 1,
-            "CONSENSUS_3": 1,
-            "CONSENSUS_2": 2,
-            "FAMILY_ONLY": 3,
-        },
-        "horizon": 5,
-        "gain": 8.0,
-        "cut": -5.0,
-    },
     "h5m80d50_direction": {
         "signal_file": "h5direction_target.csv",
         "signal_dir": "signals_h5direction",

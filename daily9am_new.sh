@@ -124,9 +124,6 @@ python notify_daily.py
 
 python b4mkt_bark_models.py
 
-python b4mkt_bark_models.py --users lmz
-
-
 #run_step "prepare_training_v5b.py" \
 #    python prepare_training_v5b.py   --merge-mode memory   --workers 8   --output-dir processed/train_v5b_0715  \
 #    --minute-feature-dir processed/minute_features_v5b/by_stock   --clean
@@ -137,6 +134,6 @@ python b4mkt_bark_models.py --users lmz
 #run_step "h2m80d50 signals" \
 #    python h2m80d50_dual/signal_h2m80d50.py   --input processed/train_v5b_0715/train_v5b.parquet    --out-dir signals_0715
 
-
+python save_latest_data.py --parquet-path processed/train_v5b/train_v5b.parquet --prefix train --output-dir audit
 
 
