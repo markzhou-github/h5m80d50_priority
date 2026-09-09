@@ -37,6 +37,14 @@ PIPELINES = {
         "audit_file": "h2dual.csv",
         "target_file": "h2dual_target.csv",
     },
+    "h3m55d15_dual": {
+        # Change these two paths if your actual locations differ.
+        "generate_script": "h2m80d50_dual/generate_signals_range.py",
+        "input": "processed/train_v5b/train_v5b.parquet",
+        "signal_dir": "signals_h3dual",
+        "audit_file": "h3dual.csv",
+        "target_file": "h3dual_target.csv",
+    },
     "h5m80d50_ensemble": {
         # Change these two paths if your actual locations differ.
         "generate_script": "h5m80d50_ensemble/generate_signals_range.py",

@@ -10,7 +10,7 @@ mkdir -p "$LOG_DIR"
 
 echo "Script started. Waiting until 8:00 AM..."
 
-# Detect OS and calculate seconds until 9am
+# Detect OS and calculate seconds until 8am
 now=$(date +%s)
 
 if [[ "$(uname)" == "Darwin" ]]; then
