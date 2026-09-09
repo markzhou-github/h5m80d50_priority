@@ -124,6 +124,8 @@ python notify_daily.py
 
 python b4mkt_bark_models.py
 
+python b4mkt_bark_models.py --users lmz
+
 
 #run_step "prepare_training_v5b.py" \
 #    python prepare_training_v5b.py   --merge-mode memory   --workers 8   --output-dir processed/train_v5b_0715  \
