@@ -49,10 +49,18 @@ def main() -> None:
     args = parser.parse_args()
 
     feature_sets = json.loads((args.catalog / "feature_sets.json").read_text(encoding="utf-8"))
+    required = [args.model_work / 'models' / expert / f'seed_{seed}' / 'model.txt'
+                for expert in EXPERTS for seed in SEEDS]
+    required += [HERE / 'risk' / name for name in ('day_risk_logit.joblib',
+        'day_risk_features.txt', 'dated_history.csv', 'market_loss_logit.joblib', 'market_protocol.json')]
+    missing = [str(path) for path in required if not path.exists()]
+    if missing:
+        raise FileNotFoundError('Missing package inputs:\n' + '\n'.join(missing))
     manifest: dict[str, object] = {
         "name": "h3m55d15_consensus", "target": "h3m55d15",
-        "standard_signal": "pooled six-model seed-vote Top3 gated by logistic keep50",
-        "high_confidence": "strict shared Top1",
+        "current": "(pooled Top3 minus pooled Top1) AND market raw-loss gate",
+        "P1": "earlier keep50 Top3 INTERSECTION current",
+        "P2": "(earlier keep60 Top3 UNION current) MINUS P1",
         "seeds": list(SEEDS), "models": {}, "files": {},
     }
     for expert, feature_set in EXPERTS.items():
@@ -66,16 +74,12 @@ def main() -> None:
             copy(source, target)
             manifest["models"][expert].append(str(target.relative_to(HERE)).replace("\\", "/"))
 
-    for name in ("day_risk_logit.joblib", "day_risk_features.txt", "risk_score_history.csv"):
-        source = args.risk_work / name
-        target = HERE / "risk" / name
-        if source.exists():
-            copy(source, target)
-        elif not target.exists():
-            raise FileNotFoundError(
-                f"Missing {source} and production-local fallback {target}. "
-                "Run build_day_risk_artifacts.py first."
-            )
+    copy(ROOT / 'complete_features_h3m55d15/raw_loss_filter/priority_benchmark/summary.csv',
+         HERE / 'reports/priority_benchmark.csv')
+    import subprocess
+    import sys
+    (HERE / 'environment_freeze.txt').write_text(
+        subprocess.check_output([sys.executable, '-m', 'pip', 'freeze'], text=True), encoding='utf-8')
     for name in ("locked_oos_consensus_summary.csv", "locked_oos_day_quality.csv"):
         copy(args.model_work / "reports" / name, HERE / "reports" / name)
     copy(
@@ -87,7 +91,7 @@ def main() -> None:
             path.is_file()
             and path.name != "manifest.json"
             and "__pycache__" not in path.parts
-            and "signals" not in path.parts
+            and (path.parent == HERE or path.relative_to(HERE).parts[0] in ('models', 'risk', 'features', 'reports'))
         ):
             manifest["files"][str(path.relative_to(HERE)).replace("\\", "/")] = sha256(path)
     (HERE / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")

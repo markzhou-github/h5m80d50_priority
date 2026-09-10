@@ -28,6 +28,17 @@ def main() -> None:
             failures.append(f"checksum: {name}")
     if failures:
         raise RuntimeError("Bundle verification failed:\n" + "\n".join(failures))
+    import joblib
+    import lightgbm as lgb
+    from generate_signals import EXPERTS, SEEDS, lines
+    for expert in EXPERTS:
+        features = lines(HERE / 'features' / f'{expert}.txt')
+        for seed in SEEDS:
+            model = lgb.Booster(model_file=str(HERE / 'models' / expert / f'seed_{seed}/model.txt'))
+            if model.feature_name() != features:
+                raise ValueError(f'Feature order mismatch: {expert}/{seed}')
+    for name in ('day_risk_logit.joblib', 'market_loss_logit.joblib'):
+        joblib.load(HERE / 'risk' / name)
     print(f"Bundle verified: {len(manifest['files'])} files")
 
 

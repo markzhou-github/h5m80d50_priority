@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 from pathlib import Path
 
 import joblib
@@ -71,6 +72,17 @@ def main() -> None:
     pd.DataFrame({"bad_risk_logit": train_scores + oos_scores}).to_csv(
         args.out_dir / "risk_score_history.csv", index=False
     )
+    dated = pd.concat([
+        pd.DataFrame({'trade_date': train.trade_date.astype(str), 'bad_risk_logit': train_scores}),
+        decisions[['trade_date', 'bad_risk_logit']].assign(trade_date=lambda x: x.trade_date.astype(str)),
+    ], ignore_index=True)
+    if dated.groupby('trade_date').bad_risk_logit.nunique().gt(1).any():
+        raise ValueError('Inconsistent historical risk scores')
+    dated.drop_duplicates('trade_date').sort_values('trade_date').to_csv(
+        args.out_dir / 'dated_history.csv', index=False)
+    frozen = ROOT / 'complete_features_h3m55d15/raw_loss_filter/frozen_oos'
+    shutil.copy2(frozen / 'market_loss_logit.joblib', args.out_dir / 'market_loss_logit.joblib')
+    shutil.copy2(frozen / 'frozen_protocol.json', args.out_dir / 'market_protocol.json')
     print(f"[features] {len(features)}")
     print(f"[history] train={len(train_scores)} oos={len(oos_scores)} total={len(train_scores)+len(oos_scores)}")
     print(f"[save] {args.out_dir}")

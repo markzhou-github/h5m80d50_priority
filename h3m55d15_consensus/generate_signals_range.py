@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import polars as pl
 
-from generate_signals import HERE, generate_for_date, load_context
+from generate_signals import HERE, generate_for_date, load_context, read_history, record_history
 
 
 def main() -> None:
@@ -17,6 +17,7 @@ def main() -> None:
     parser.add_argument("--end-date", required=True, help="Inclusive YYYYMMDD")
     parser.add_argument("--out-dir", type=Path, default=HERE / "signals_range")
     parser.add_argument("--combined-out", type=Path)
+    parser.add_argument('--history-file', type=Path, default=HERE / 'state/risk_history.csv')
     args = parser.parse_args()
     if args.start_date > args.end_date:
         raise ValueError("--start-date must not be after --end-date")
@@ -30,22 +31,25 @@ def main() -> None:
     if not dates:
         raise ValueError(f"No dates in requested range {args.start_date}..{args.end_date}")
     context = load_context(args.input)
-    history = pd.read_csv(HERE / "risk/risk_score_history.csv")["bad_risk_logit"].dropna().astype(float).tolist()
+    history = read_history(args.history_file)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     signals, diagnostics = [], []
     for index, date in enumerate(dates, 1):
-        selected, diagnostic = generate_for_date(args.input, date, context, history)
+        candidates, diagnostic = generate_for_date(args.input, date, context,
+            history.loc[history.trade_date.lt(date), 'bad_risk_logit'].tolist())
+        history = record_history(history, date, diagnostic['bad_day_risk'], args.history_file)
+        candidates.to_csv(args.out_dir / f'candidates_{date}.csv', index=False)
+        selected = candidates[candidates.priority.gt(0)]
         selected.to_csv(args.out_dir / f"signals_{date}.csv", index=False)
         signals.append(selected)
         diagnostics.append(diagnostic)
-        history.append(float(diagnostic["bad_day_risk"]))
         print(
-            f"[{index}/{len(dates)}] {date} gate={'ACCEPT' if diagnostic['accepted'] else 'REJECT'} "
-            f"risk={diagnostic['bad_day_risk']:.6f} threshold={diagnostic['bad_day_threshold']:.6f}",
+            f"[{index}/{len(dates)}] {date} P1={diagnostic['p1']} P2={diagnostic['p2']}",
             flush=True,
         )
     combined = pd.concat(signals, ignore_index=True)
     combined_out = args.combined_out or args.out_dir / f"signals_{dates[0]}_{dates[-1]}.csv"
+    combined_out.parent.mkdir(parents=True, exist_ok=True)
     combined.to_csv(combined_out, index=False)
     combined.to_csv(args.out_dir / "signals_latest_range.csv", index=False)
     pd.DataFrame(diagnostics).to_csv(
