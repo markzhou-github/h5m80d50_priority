@@ -79,7 +79,8 @@ def load_context(input_path: Path) -> SignalContext:
 
 
 def generate_for_date(
-    input_path: Path, date: str, context: SignalContext, history: list[float]
+    input_path: Path, date: str, context: SignalContext, history: list[float],
+    *, historical_scoring: bool = False,
 ) -> tuple[pd.DataFrame, dict[str, object]]:
     required = list(dict.fromkeys(
         [x for values in context.feature_map.values() for x in values]
@@ -92,7 +93,7 @@ def generate_for_date(
         .select("ts_code", pl.col("trade_date").cast(pl.Utf8), *required)
         .collect().to_pandas()
     )
-    if date <= context.earliest_date:
+    if date <= context.earliest_date and not historical_scoring:
         raise ValueError('Date is not after the frozen development period; not a historical replay model')
     if len(frame) < 10 or frame.ts_code.isna().any() or frame.ts_code.duplicated().any():
         raise ValueError(f'Need at least 10 unique non-null stocks for {date}')

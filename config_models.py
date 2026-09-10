@@ -93,6 +93,23 @@ MODEL_CONFIGS = {
         "gain": 5.5,
         "cut": -1.5,
     },
+    "h3m55d15_consensus": {
+        "signal_file": "h3consensus_target.csv",
+        "signal_dir": "signals_h3consensus",
+        "file_glob": "signals_*.csv",
+        "date_regex": r"^signals_(\d{8})\.csv$",
+        "priority_name_column": "signal_tag",
+        "priority_mapping": {
+            "KEEP50_AND_CURRENT": 1,
+            "KEEP60_ONLY": 2,
+            "KEEP60_AND_CURRENT": 2,
+            "CURRENT_ONLY": 2,
+            "REJECTED": 5, 
+        },
+        "horizon": 3,
+        "gain": 5.5,
+        "cut": -1.5,
+    },
 }
 
 

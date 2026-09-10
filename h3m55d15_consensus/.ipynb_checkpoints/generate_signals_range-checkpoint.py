@@ -25,34 +25,19 @@ def main() -> None:
     dates = (
         pl.scan_parquet(args.input)
         .select(pl.col("trade_date").cast(pl.Utf8).alias("trade_date"))
-        .filter(pl.col("trade_date").is_between(pl.lit(args.start_date), pl.lit(args.end_date), closed="both"))
+        .filter(pl.col("trade_date").is_between(args.start_date, args.end_date, closed="both"))
         .unique().sort("trade_date").collect()["trade_date"].to_list()
     )
     if not dates:
         raise ValueError(f"No dates in requested range {args.start_date}..{args.end_date}")
     context = load_context(args.input)
-    historical_scoring = args.start_date <= context.earliest_date
-    print(f'[mode] {"retrospective_fixed_calibration" if historical_scoring else "production"}; '
-          f'requested_start={args.start_date}; development_cutoff={context.earliest_date}')
-    if historical_scoring:
-        print('[WARNING] RETROSPECTIVE scoring: frozen models and calibration may use future information relative to historical dates. NOT an OOS backtest.')
-        history = pd.read_csv(HERE / 'risk/dated_history.csv', dtype={'trade_date': str})
-        fixed_scores = history.loc[history.trade_date.le(context.earliest_date), 'bad_risk_logit'].tolist()
-        if not fixed_scores:
-            raise ValueError('Packaged development calibration history is empty')
-    else:
-        history = read_history(args.history_file)
+    history = read_history(args.history_file)
     args.out_dir.mkdir(parents=True, exist_ok=True)
     signals, diagnostics = [], []
     for index, date in enumerate(dates, 1):
         candidates, diagnostic = generate_for_date(args.input, date, context,
-            fixed_scores if historical_scoring else history.loc[history.trade_date.lt(date), 'bad_risk_logit'].tolist(),
-            historical_scoring=historical_scoring)
-        mode = 'retrospective_fixed_calibration' if historical_scoring else 'production'
-        candidates['scoring_mode'] = mode
-        diagnostic['scoring_mode'] = mode
-        if not historical_scoring:
-            history = record_history(history, date, diagnostic['bad_day_risk'], args.history_file)
+            history.loc[history.trade_date.lt(date), 'bad_risk_logit'].tolist())
+        history = record_history(history, date, diagnostic['bad_day_risk'], args.history_file)
         candidates.to_csv(args.out_dir / f'candidates_{date}.csv', index=False)
         selected = candidates[candidates.priority.gt(0)]
         selected.to_csv(args.out_dir / f"signals_{date}.csv", index=False)
