@@ -8,10 +8,25 @@ from pathlib import Path
 
 import polars as pl
 
+def valid_date(value: str) -> str:
+    try:
+        datetime.strptime(value, "%Y%m%d")
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            "--latest-date must be a valid date in YYYYMMDD format"
+        ) from exc
 
+    return value
+    
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Export rows with the latest trade_date from a parquet file."
+    )
+    parser.add_argument(
+        "--latest-date",
+        type=valid_date,
+        default=None,
+        help="Date to export in YYYYMMDD format. Defaults to the latest date in the parquet file.",
     )
     parser.add_argument(
         "--parquet-path",
@@ -44,14 +59,17 @@ def main() -> None:
         .alias("trade_date")
     )
 
-    latest_trade_date = (
-        source.select(pl.col("trade_date").max())
-        .collect(engine="streaming")
-        .item()
-    )
+    if args.latest_date:
+        latest_trade_date = args.latest_date
+    else:
+        latest_trade_date = (
+            source.select(pl.col("trade_date").max())
+            .collect(engine="streaming")
+            .item()
+        )
 
-    if latest_trade_date is None:
-        raise ValueError(f"No rows found in {args.parquet_path}")
+        if latest_trade_date is None:
+            raise ValueError(f"No rows found in {args.parquet_path}")
 
     save_date = datetime.now().strftime("%Y%m%d")
     output_path = output_dir / (
