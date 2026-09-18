@@ -1,0 +1,20 @@
+{
+  "package_name": "h5m80d50_competing_direction",
+  "target_spec": "h5m80d50",
+  "status": "frozen_after_locked_oos",
+  "stage1_seeds": [20260718, 20260719, 20260720, 20260721, 20260722],
+  "competing_seeds": [20260825, 20260826, 20260827, 20260828, 20260829],
+  "stage1_families": {
+    "F150": {"top_k": 1},
+    "C185": {"top_k": 3},
+    "F220": {"top_k": 5}
+  },
+  "policy": {
+    "candidate_rule": "union_of_stage1_family_topk",
+    "ranking_score": "mean_intensity_probability_times_mean_direction_probability",
+    "top_k": 3,
+    "calibration": "platt_per_head_on_final_validation",
+    "direction_ratio_threshold": 0.45,
+    "rejection": "strict_no_fill"
+  }
+}

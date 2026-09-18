@@ -1,0 +1,15 @@
+{
+  "trade_date": "20260723",
+  "universe_rows": 1427,
+  "signal_rows": 7,
+  "ensemble_signal_rows": 7,
+  "production_policy": "F220_TOP1_LATE_EARLY_GATE",
+  "f220_top1_rows": 1,
+  "gate_pass_rows": 1081,
+  "production_signal_rows": 1,
+  "consensus_3_rows": 0,
+  "consensus_2_rows": 2,
+  "family_only_rows": 5,
+  "gate_source_nonnull_rows": 1427,
+  "gate_threshold": 0.75791696
+}

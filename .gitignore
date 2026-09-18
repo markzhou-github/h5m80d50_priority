@@ -1,0 +1,15 @@
+*/
+
+!models/
+!models/**
+!h5m80d50_priority/
+!h2m80d50_dual/
+!h5m80d50_priority/**
+!h2m80d50_dual/**
+!h5m80d50_ensemble/
+!h5m80d50_ensemble/**
+!h5m80d50_direction
+!h5m80d50_direction/**
+!h3m55d15_consensus
+!h3m55d15_consensus/**
+

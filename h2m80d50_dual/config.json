@@ -1,0 +1,67 @@
+{
+  "package_name": "h3m55d15_dual",
+  "target_name": "target_h3m55d15",
+  "description": "Dual production signal package: strict full-walk-forward model plus strong fixed-window high-confidence model.",
+  "family_models": [
+    "production",
+    "no_auction_chip",
+    "no_sw_l2"
+  ],
+  "seed_models": [
+    "ff80_seed20260629",
+    "ff80_seed20260630",
+    "ff80_seed20260701",
+    "ff80_seed20260702",
+    "ff80_seed20260703"
+  ],
+  "day_regime_model": "label_broad_top5_tp_ge_3",
+  "thresholds": {
+    "base_rank_top_n": 7,
+    "strict_family_cv_max": 0.074348,
+    "strict_family_cv_tight_max": 0.06,
+    "strong_prob_good_day_min": 0.20,
+    "strong_seed_cv_max": 0.06,
+    "ixic_swing_max": 1.185989,
+    "csi1500_mcap_oc_ret_max": 0.006831,
+    "layer2_m1_rank_top_n": 2,
+    "layer2_m1_prob_good_day_min": 0.10,
+    "layer2_m1_family_cv_max": 0.10,
+    "layer2_m1_ixic_swing_max": 1.50,
+    "layer2_m3_rank_top_n": 5,
+    "layer2_m3_prob_good_day_min": 0.20,
+    "layer2_m3_seed_cv_max": 0.06,
+    "layer2_m3_ixic_swing_max": 1.50
+  },
+  "priority": {
+    "overlap_core": 1,
+    "strong_only": 2,
+    "strict_only": 3,
+    "layer2_m1_m3_overlap": 4,
+    "layer2_m1_only": 5,
+    "layer2_m3_only": 6,
+    "watchlist": 7
+  },
+  "raw_exit_rule": {
+    "take_profit": 0.08,
+    "stop_loss": -0.05,
+    "max_hold_days": 2,
+    "buy_rule": "Buy at next trading day's open after signal date.",
+    "a_share_t1_rule": "No same-day sell on the entry day.",
+    "exit_priority": [
+      "If entry-day close <= stop price, sell at the next trading day's open.",
+      "From the second holding day onward, if open >= take-profit price, sell at open.",
+      "Otherwise, if high >= take-profit price, sell at take-profit price.",
+      "Otherwise, if close <= stop price, sell at close.",
+      "If max_hold_days is reached without take-profit or stop, sell at that day's close."
+    ],
+    "selected_from_report": "reports/raw_exit_sweep_fullpanel_loose_dd/raw_exit_sweep_all.csv"
+  },
+  "notes": [
+    "strict_signal = avg_rank <= 7 AND high_confidence AND family_pred_cv <= 0.074348",
+    "strong_signal = avg_rank <= 7 AND high_confidence AND prob_good_day >= 0.20 AND seed_pred_cv <= 0.06",
+    "high_confidence = ixic_swing <= 1.185989 AND csi1500_mcap_oc_ret <= 0.006831",
+    "layer2_signal = M1 OR M3",
+    "M1 = avg_rank <= 2 AND prob_good_day >= 0.10 AND family_pred_cv <= 0.10 AND ixic_swing <= 1.50",
+    "M3 = avg_rank <= 5 AND prob_good_day >= 0.20 AND seed_pred_cv <= 0.06 AND ixic_swing <= 1.50"
+  ]
+}

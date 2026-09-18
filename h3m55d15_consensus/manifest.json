@@ -1,0 +1,54 @@
+{
+  "name": "h3m55d15_consensus",
+  "target": "h3m55d15",
+  "current": "(pooled Top3 minus pooled Top1) AND market raw-loss gate",
+  "P1": "earlier keep50 Top3 INTERSECTION current",
+  "P2": "(earlier keep60 Top3 UNION current) MINUS P1",
+  "seeds": [
+    20260801,
+    20260811,
+    20260821
+  ],
+  "models": {
+    "top1500_lr20_l2_12": [
+      "models/top1500_lr20_l2_12/seed_20260801/model.txt",
+      "models/top1500_lr20_l2_12/seed_20260811/model.txt",
+      "models/top1500_lr20_l2_12/seed_20260821/model.txt"
+    ],
+    "top1600_leaf600": [
+      "models/top1600_leaf600/seed_20260801/model.txt",
+      "models/top1600_leaf600/seed_20260811/model.txt",
+      "models/top1600_leaf600/seed_20260821/model.txt"
+    ]
+  },
+  "files": {
+    "README.md": "4a3687e3a1ce5481c7f0d2b503c56eb67fa18d388654db10ad4a1844024bab8d",
+    "build_day_risk_artifacts.py": "67d82c2083de690df224e51c77c930890a811f3938dff030574ab0905a56c0c7",
+    "environment_freeze.txt": "88492d386297c882a14ec53157592aa808a89b3326d77998457578e86b5a5bbc",
+    "features/top1500_lr20_l2_12.txt": "3f0e5022bf08371ec5799de07174ec9f2759d30ae976d23e22d3c71d3a18c534",
+    "features/top1600_leaf600.txt": "3ea7fa3994b65273d14026e949c911d431cb58633915738e5f1fd5f5c6924fa0",
+    "generate_signals.py": "f0ae0590eda3613b6373589908e41bf53aaa2faaca8c3606b6ea13074c3dabe1",
+    "generate_signals_range.py": "08be3130407dc8842672e8acdeb25e82fbdb354c74e0aa8d08bb642824243ca7",
+    "models/top1500_lr20_l2_12/seed_20260801/model.txt": "8f2ae4c1800ad8078894939634650398e2d56f56d55e63fe1e862e0445aaeb9a",
+    "models/top1500_lr20_l2_12/seed_20260811/model.txt": "60ac64f240dc61129150b42036e3108ab0f060b87580f1f3a216c69bc82463d3",
+    "models/top1500_lr20_l2_12/seed_20260821/model.txt": "9a449f15a1e5ca3aa38798140973b1a518ca3a404062a0edf7059afc2cdfc79e",
+    "models/top1600_leaf600/seed_20260801/model.txt": "e7275e89199733788270ae94915211f29a713e4be3daed70b9a56d31f139e114",
+    "models/top1600_leaf600/seed_20260811/model.txt": "37c11ea0eb27a8b05223786e16cf6e76e12fa3ff73ede9fe1cc3aa5f9f7832a2",
+    "models/top1600_leaf600/seed_20260821/model.txt": "cc06cdb0415c33a1f618ab355aae07dd28cc62b561b53e1e01177f4dd72e66e3",
+    "package_production.py": "f31a2c3da6b80848858d284d6177220c303e611a31670f1a057eef1a2c4cab8c",
+    "reports/locked_oos_consensus_summary.csv": "fcd5440d5cbd13c92b9ac9aaacc99020f1540b957baafb8ded4c50bcc10ca43c",
+    "reports/locked_oos_day_quality.csv": "7559659fc4a751f499456d0b246de0c45b4f4c026f334f2fa3ac0c200cf7a308",
+    "reports/locked_oos_day_risk_summary.csv": "14f167286f0fc7296679b819de4d218c0fdc543cf656a0b3ffba8daab2ce1b06",
+    "reports/priority_benchmark.csv": "311cfd5b3f6bb72846d67b38e8af97a26ea71814ac744dc7595e18892d92c587",
+    "requirements.txt": "2300c9be1db31b01923615e29f69138485a3e33665f15b4e72769f3f3b500aa5",
+    "risk/dated_history.csv": "f88d1a181f8b407d13f751b96fd9f11c2c2803925edeebfe52efdfc3ac55567f",
+    "risk/day_risk_features.txt": "4fa66996ca3cb830e1b4867ccdaf034c0fc1c2198f6ca99770711fef40632ae7",
+    "risk/day_risk_logit.joblib": "1db424e91571874e64ae18a012dfc1c7f9224b8a2acfff3ad9f9cc8b67912734",
+    "risk/market_loss_logit.joblib": "b8c5beda43907e7475efa9acdf73e476587665d9a90ea5ad730a5c81d4a4c578",
+    "risk/market_protocol.json": "2dc323b5e86ba27e2e892d873c888ce829c2fedd88f02f520e66c2dc9ed186de",
+    "risk/risk_score_history.csv": "cd983967b84d226d0eaffbfc4e9b4cf9d2e8e15eb8263ccba07580e8732632a3",
+    "run_package_wsl.sh": "5a35f3a3f19b8d0484bf79761c723c90dce11c0c5defa4d615629b6a18176495",
+    "test_signal_rules.py": "810cb69b5f596190805789ee4ea3e56bc7c86129a14de812223dc36f6c1566a0",
+    "verify_bundle.py": "40fa9f23764deec0a3114676b83ecb309c933888a272bde89f58b7a710de9635"
+  }
+}
